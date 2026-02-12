@@ -1,0 +1,36 @@
+[
+  {
+    "token": "google-chrome",
+    "iconKey": "googlechrome"
+  },
+  {
+    "token": "firefox",
+    "iconKey": "firefox"
+  },
+  {
+    "token": "microsoft-edge"
+  },
+  {
+    "token": "brave-browser",
+    "iconKey": "brave"
+  },
+  {
+    "token": "arc",
+    "iconKey": "arc"
+  },
+  {
+    "token": "opera",
+    "iconKey": "opera"
+  },
+  {
+    "token": "vivaldi",
+    "iconKey": "vivaldi"
+  },
+  {
+    "token": "chromium"
+  },
+  {
+    "token": "tor-browser",
+    "iconKey": "torbrowser"
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "token": "obs",
+    "iconKey": "obsstudio"
+  },
+  {
+    "token": "obsidian",
+    "iconKey": "obsidian"
+  },
+  {
+    "token": "alma"
+  },
+  {
+    "token": "kaku",
+    "installCommand": "brew tap tw93/tap && brew install --cask tw93/tap/kaku",
+    "uninstallCommand": "brew uninstall --cask kaku"
+  }
+]

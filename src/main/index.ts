@@ -1,7 +1,8 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import { spawn } from 'child_process'
+import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { existsSync } from 'fs'
+import Database from 'better-sqlite3'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
@@ -39,8 +40,9 @@ function createWindow(): void {
 
 type BrewStatus = {
   installed: boolean
-  brewPath: string | null
-  version: string | null
+  currentVersion: string | null
+  latestVersion: string | null
+  installedAppCount: number | null
 }
 
 type CommandResult = {
@@ -51,30 +53,411 @@ type CommandResult = {
   error?: string
 }
 
+type BrowserCatalogCacheItem = {
+  token: string
+  name: string
+  description: string
+  homepage: string | null
+  iconUrl: string | null
+  fallbackIconUrl: string | null
+  installed: boolean
+}
+
+type BrowserCatalogCachePayload = {
+  brewInstalled: boolean | null
+  items: BrowserCatalogCacheItem[]
+}
+
+type InstalledAppCacheItem = {
+  token: string
+  name: string
+  description: string
+  homepage: string | null
+  installed: boolean
+}
+
+type InstalledAppStatus = {
+  token: string
+  installed: boolean
+  name: string | null
+  description: string | null
+  homepage: string | null
+}
+
+type CatalogCacheItem = {
+  token: string
+  name: string
+  description: string
+  homepage: string | null
+  iconUrl: string | null
+  fallbackIconUrl: string | null
+  installed: boolean
+  iconKey: string | null
+  installCommand?: string
+  uninstallCommand?: string
+  brewType?: 'cask' | 'formula'
+}
+
+type CatalogCachePayload = {
+  brewInstalled: boolean | null
+  items: CatalogCacheItem[]
+}
+
 const COMMON_BREW_PATHS = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']
+let nextTerminalSessionId = 1
+const terminalSessions = new Map<number, ChildProcessWithoutNullStreams>()
+let cacheDb: Database.Database | null = null
 
-function runShellCommand(command: string, timeoutMs = 1000 * 60 * 20): Promise<CommandResult> {
-  return new Promise((resolve) => {
-    const normalizedPath = [
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
-      '/usr/bin',
-      '/bin',
-      '/usr/sbin',
-      '/sbin',
-      process.env.PATH ?? ''
-    ]
-      .filter(Boolean)
-      .join(':')
+function getCacheDb(): Database.Database {
+  if (cacheDb) return cacheDb
 
-    const child = spawn('/bin/zsh', ['-lc', command], {
-      env: {
-        ...process.env,
-        PATH: normalizedPath,
-        HOMEBREW_NO_ENV_HINTS: '1',
-        NONINTERACTIVE: '1',
-        CI: '1'
+  const dbPath = join(app.getPath('userData'), 'apppad-cache.sqlite')
+  const db = new Database(dbPath)
+  db.pragma('journal_mode = WAL')
+  db.pragma('synchronous = NORMAL')
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS browser_catalog_cache (
+      token TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      homepage TEXT,
+      icon_url TEXT,
+      fallback_icon_url TEXT,
+      installed INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS installed_apps_cache (
+      token TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      homepage TEXT,
+      installed INTEGER NOT NULL DEFAULT 0,
+      last_seen_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS app_cache_kv (
+      cache_key TEXT PRIMARY KEY,
+      cache_value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS catalog_items_cache (
+      catalog_key TEXT NOT NULL,
+      token TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      homepage TEXT,
+      icon_url TEXT,
+      fallback_icon_url TEXT,
+      installed INTEGER NOT NULL DEFAULT 0,
+      icon_key TEXT,
+      install_command TEXT,
+      uninstall_command TEXT,
+      brew_type TEXT,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (catalog_key, token)
+    );
+  `)
+
+  cacheDb = db
+  return db
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (size <= 0) return [items]
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
+function getBrowserCatalogCache(): BrowserCatalogCachePayload {
+  const db = getCacheDb()
+  const rows = db
+    .prepare(
+      `
+      SELECT token, name, description, homepage, icon_url, fallback_icon_url, installed
+      FROM browser_catalog_cache
+      ORDER BY token ASC
+    `
+    )
+    .all() as Array<{
+    token: string
+    name: string
+    description: string
+    homepage: string | null
+    icon_url: string | null
+    fallback_icon_url: string | null
+    installed: number
+  }>
+
+  const brewInstalledRow = db
+    .prepare(
+      `
+      SELECT cache_value
+      FROM app_cache_kv
+      WHERE cache_key = 'browser_catalog_brew_installed'
+      LIMIT 1
+    `
+    )
+    .get() as { cache_value?: string } | undefined
+
+  const brewInstalled =
+    brewInstalledRow?.cache_value === '1'
+      ? true
+      : brewInstalledRow?.cache_value === '0'
+        ? false
+        : null
+
+  return {
+    brewInstalled,
+    items: rows.map((row) => ({
+      token: row.token,
+      name: row.name,
+      description: row.description,
+      homepage: row.homepage,
+      iconUrl: row.icon_url,
+      fallbackIconUrl: row.fallback_icon_url,
+      installed: row.installed === 1
+    }))
+  }
+}
+
+function setBrowserCatalogCache(payload: BrowserCatalogCachePayload): { success: true } {
+  const db = getCacheDb()
+  const now = Date.now()
+
+  const transaction = db.transaction((input: BrowserCatalogCachePayload) => {
+    db.prepare('DELETE FROM browser_catalog_cache').run()
+
+    const insertStmt = db.prepare(
+      `
+      INSERT INTO browser_catalog_cache (
+        token, name, description, homepage, icon_url, fallback_icon_url, installed, updated_at
+      ) VALUES (
+        @token, @name, @description, @homepage, @icon_url, @fallback_icon_url, @installed, @updated_at
+      )
+    `
+    )
+
+    input.items.forEach((item) => {
+      insertStmt.run({
+        token: item.token,
+        name: item.name,
+        description: item.description,
+        homepage: item.homepage,
+        icon_url: item.iconUrl,
+        fallback_icon_url: item.fallbackIconUrl,
+        installed: item.installed ? 1 : 0,
+        updated_at: now
+      })
+    })
+
+    db.prepare(
+      `
+      INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
+      VALUES ('browser_catalog_brew_installed', @cache_value, @updated_at)
+      ON CONFLICT(cache_key) DO UPDATE SET
+        cache_value = excluded.cache_value,
+        updated_at = excluded.updated_at
+    `
+    ).run({
+      cache_value: input.brewInstalled === null ? 'null' : input.brewInstalled ? '1' : '0',
+      updated_at: now
+    })
+  })
+
+  transaction(payload)
+  return { success: true }
+}
+
+function getCatalogItemsCache(catalogKey: string): CatalogCachePayload {
+  const db = getCacheDb()
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        token, name, description, homepage, icon_url, fallback_icon_url, installed,
+        icon_key, install_command, uninstall_command, brew_type
+      FROM catalog_items_cache
+      WHERE catalog_key = ?
+      ORDER BY token ASC
+    `
+    )
+    .all(catalogKey) as Array<{
+    token: string
+    name: string
+    description: string
+    homepage: string | null
+    icon_url: string | null
+    fallback_icon_url: string | null
+    installed: number
+    icon_key: string | null
+    install_command: string | null
+    uninstall_command: string | null
+    brew_type: 'cask' | 'formula' | null
+  }>
+
+  const brewInstalledRow = db
+    .prepare(
+      `
+      SELECT cache_value
+      FROM app_cache_kv
+      WHERE cache_key = ?
+      LIMIT 1
+    `
+    )
+    .get(`catalog_${catalogKey}_brew_installed`) as { cache_value?: string } | undefined
+
+  const brewInstalled =
+    brewInstalledRow?.cache_value === '1'
+      ? true
+      : brewInstalledRow?.cache_value === '0'
+        ? false
+        : null
+
+  return {
+    brewInstalled,
+    items: rows.map((row) => ({
+      token: row.token,
+      name: row.name,
+      description: row.description,
+      homepage: row.homepage,
+      iconUrl: row.icon_url,
+      fallbackIconUrl: row.fallback_icon_url,
+      installed: row.installed === 1,
+      iconKey: row.icon_key,
+      installCommand: row.install_command ?? undefined,
+      uninstallCommand: row.uninstall_command ?? undefined,
+      brewType: row.brew_type ?? undefined
+    }))
+  }
+}
+
+function setCatalogItemsCache(catalogKey: string, payload: CatalogCachePayload): { success: true } {
+  const db = getCacheDb()
+  const now = Date.now()
+
+  const transaction = db.transaction((input: CatalogCachePayload) => {
+    db.prepare('DELETE FROM catalog_items_cache WHERE catalog_key = ?').run(catalogKey)
+
+    const insertStmt = db.prepare(
+      `
+      INSERT INTO catalog_items_cache (
+        catalog_key, token, name, description, homepage, icon_url, fallback_icon_url, installed,
+        icon_key, install_command, uninstall_command, brew_type, updated_at
+      ) VALUES (
+        @catalog_key, @token, @name, @description, @homepage, @icon_url, @fallback_icon_url, @installed,
+        @icon_key, @install_command, @uninstall_command, @brew_type, @updated_at
+      )
+    `
+    )
+
+    input.items.forEach((item) => {
+      insertStmt.run({
+        catalog_key: catalogKey,
+        token: item.token,
+        name: item.name,
+        description: item.description,
+        homepage: item.homepage,
+        icon_url: item.iconUrl,
+        fallback_icon_url: item.fallbackIconUrl,
+        installed: item.installed ? 1 : 0,
+        icon_key: item.iconKey ?? null,
+        install_command: item.installCommand ?? null,
+        uninstall_command: item.uninstallCommand ?? null,
+        brew_type: item.brewType ?? null,
+        updated_at: now
+      })
+    })
+
+    db.prepare(
+      `
+      INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
+      VALUES (@cache_key, @cache_value, @updated_at)
+      ON CONFLICT(cache_key) DO UPDATE SET
+        cache_value = excluded.cache_value,
+        updated_at = excluded.updated_at
+    `
+    ).run({
+      cache_key: `catalog_${catalogKey}_brew_installed`,
+      cache_value: input.brewInstalled === null ? 'null' : input.brewInstalled ? '1' : '0',
+      updated_at: now
+    })
+  })
+
+  transaction(payload)
+  return { success: true }
+}
+
+function getInstalledAppsStatus(tokens: string[]): { items: InstalledAppStatus[] } {
+  if (tokens.length === 0) return { items: [] }
+
+  const db = getCacheDb()
+  const selectStatus = db.prepare(
+    `
+    SELECT token, installed, name, description, homepage
+    FROM installed_apps_cache
+    WHERE token = ?
+    LIMIT 1
+  `
+  )
+
+  const items = tokens.map((token) => {
+    const row = selectStatus.get(token) as
+      | { token: string; installed: number; name: string; description: string; homepage: string | null }
+      | undefined
+
+    if (!row) {
+      return {
+        token,
+        installed: false,
+        name: null,
+        description: null,
+        homepage: null
       }
+    }
+
+    return {
+      token: row.token,
+      installed: row.installed === 1,
+      name: row.name ?? null,
+      description: row.description ?? null,
+      homepage: row.homepage ?? null
+    }
+  })
+
+  return { items }
+}
+
+function getBaseEnv(): NodeJS.ProcessEnv {
+  const normalizedPath = [
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+    '/usr/sbin',
+    '/sbin',
+    process.env.PATH ?? ''
+  ]
+    .filter(Boolean)
+    .join(':')
+
+  return {
+    ...process.env,
+    PATH: normalizedPath,
+    HOMEBREW_NO_ENV_HINTS: '1',
+    NONINTERACTIVE: '1'
+  }
+}
+
+function runCommand(bin: string, args: string[], timeoutMs = 1000 * 60 * 20): Promise<CommandResult> {
+  return new Promise((resolve) => {
+    const child = spawn(bin, args, {
+      env: getBaseEnv()
     })
 
     let stdout = ''
@@ -129,6 +512,144 @@ function runShellCommand(command: string, timeoutMs = 1000 * 60 * 20): Promise<C
   })
 }
 
+function runShellCommand(command: string, timeoutMs = 1000 * 60 * 20): Promise<CommandResult> {
+  return new Promise((resolve) => {
+    const child = spawn('/bin/zsh', ['-lc', command], {
+      env: getBaseEnv()
+    })
+
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+
+    const finalize = (result: CommandResult): void => {
+      if (settled) return
+      settled = true
+      resolve(result)
+    }
+
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM')
+      finalize({
+        success: false,
+        code: null,
+        stdout,
+        stderr,
+        error: `Command timed out after ${Math.round(timeoutMs / 1000)}s`
+      })
+    }, timeoutMs)
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString()
+    })
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      finalize({
+        success: false,
+        code: null,
+        stdout,
+        stderr,
+        error: error.message
+      })
+    })
+
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      finalize({
+        success: code === 0,
+        code,
+        stdout,
+        stderr
+      })
+    })
+  })
+}
+
+function createTerminalSession(): { sessionId: number } {
+  const shellPath = process.env.SHELL || '/bin/zsh'
+  const sessionId = nextTerminalSessionId++
+  const child = spawn(shellPath, ['-l'], {
+    env: getBaseEnv(),
+    cwd: process.env.HOME || process.cwd(),
+    stdio: 'pipe'
+  })
+
+  terminalSessions.set(sessionId, child)
+
+  child.stdout.on('data', (chunk: Buffer) => {
+    BrowserWindow.getAllWindows().forEach((window) => {
+      window.webContents.send('terminal:data', {
+        sessionId,
+        data: chunk.toString()
+      })
+    })
+  })
+
+  child.stderr.on('data', (chunk: Buffer) => {
+    BrowserWindow.getAllWindows().forEach((window) => {
+      window.webContents.send('terminal:data', {
+        sessionId,
+        data: chunk.toString()
+      })
+    })
+  })
+
+  child.on('close', (code) => {
+    terminalSessions.delete(sessionId)
+    BrowserWindow.getAllWindows().forEach((window) => {
+      window.webContents.send('terminal:exit', {
+        sessionId,
+        code
+      })
+    })
+  })
+
+  return { sessionId }
+}
+
+function writeTerminalSession(sessionId: number, data: string): { success: boolean } {
+  const session = terminalSessions.get(sessionId)
+  if (!session || session.killed) {
+    return { success: false }
+  }
+  session.stdin.write(data)
+  return { success: true }
+}
+
+function closeTerminalSession(sessionId: number): { success: boolean } {
+  const session = terminalSessions.get(sessionId)
+  if (!session) {
+    return { success: false }
+  }
+  session.kill('SIGTERM')
+  terminalSessions.delete(sessionId)
+  return { success: true }
+}
+
+function parseCurrentVersionFromOutput(output: string): string | null {
+  const firstLine = output
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0)
+  if (!firstLine) return null
+
+  const match = firstLine.match(/Homebrew\s+([^\s]+)/i)
+  if (!match) return null
+  return match[1]?.trim() || null
+}
+
+function extractJsonObject(raw: string): string | null {
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) return null
+  return raw.slice(start, end + 1)
+}
+
 async function resolveBrewPath(): Promise<string | null> {
   for (const brewPath of COMMON_BREW_PATHS) {
     if (existsSync(brewPath)) {
@@ -147,18 +668,215 @@ async function getBrewStatus(): Promise<BrewStatus> {
   if (!brewPath) {
     return {
       installed: false,
-      brewPath: null,
-      version: null
+      currentVersion: null,
+      latestVersion: null,
+      installedAppCount: null
     }
   }
 
-  const versionResult = await runShellCommand(`"${brewPath}" --version`)
-  const versionLine = versionResult.stdout.split('\n').find((line) => line.trim().length > 0) ?? null
+  const versionResult = await runCommand(brewPath, ['--version'])
+  let currentVersion = parseCurrentVersionFromOutput(
+    `${versionResult.stdout}\n${versionResult.stderr}`.trim()
+  )
+
+  const infoResult = await runCommand(brewPath, ['info', '--json=v2', 'brew'])
+  let latestVersion: string | null = null
+  if (infoResult.stdout.trim() || infoResult.stderr.trim()) {
+    try {
+      const mergedOutput = `${infoResult.stdout}\n${infoResult.stderr}`.trim()
+      const jsonPayload = extractJsonObject(mergedOutput) ?? mergedOutput
+      const parsed = JSON.parse(jsonPayload) as {
+        formulae?: Array<{ versions?: { stable?: string }; installed?: Array<{ version?: string }> }>
+      }
+      latestVersion = parsed.formulae?.[0]?.versions?.stable?.trim() || null
+      if (!currentVersion) {
+        currentVersion = parsed.formulae?.[0]?.installed?.[0]?.version?.trim() || null
+      }
+    } catch {
+      latestVersion = null
+    }
+  }
+
+  if (!latestVersion) {
+    const infoTextResult = await runCommand(brewPath, ['info', 'brew'])
+    const stableMatch = `${infoTextResult.stdout}\n${infoTextResult.stderr}`.match(/stable\s+([^\s,]+)/i)
+    latestVersion = stableMatch?.[1]?.trim() || null
+  }
+
+  const caskListResult = await runCommand(brewPath, ['list', '--cask'])
+  const caskCount = caskListResult.success
+    ? caskListResult.stdout
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean).length
+    : 0
+
+  const installedAppCount = caskListResult.success ? caskCount : null
 
   return {
     installed: true,
-    brewPath,
-    version: versionLine
+    currentVersion,
+    latestVersion,
+    installedAppCount
+  }
+}
+
+async function syncInstalledAppsCache(): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    const brewPath = await resolveBrewPath()
+    const db = getCacheDb()
+    const now = Date.now()
+
+    if (!brewPath) {
+      db.prepare(
+        `
+        INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
+        VALUES ('installed_apps_last_sync_status', 'brew_not_found', @updated_at)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          cache_value = excluded.cache_value,
+          updated_at = excluded.updated_at
+      `
+      ).run({ updated_at: now })
+      return { success: false, count: 0, error: 'Homebrew is not installed.' }
+    }
+
+    const listResult = await runCommand(brewPath, ['list', '--cask'])
+    if (!listResult.success) {
+      db.prepare(
+        `
+        INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
+        VALUES ('installed_apps_last_sync_status', 'list_failed', @updated_at)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          cache_value = excluded.cache_value,
+          updated_at = excluded.updated_at
+      `
+      ).run({ updated_at: now })
+      return { success: false, count: 0, error: listResult.error || listResult.stderr || 'brew list failed' }
+    }
+
+    const installedTokens = listResult.stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+
+    const installedSet = new Set(installedTokens)
+    const metadataMap = new Map<string, { name: string; description: string; homepage: string | null }>()
+
+    for (const tokenChunk of chunkArray(installedTokens, 50)) {
+      if (tokenChunk.length === 0) continue
+      const infoResult = await runCommand(brewPath, ['info', '--json=v2', ...tokenChunk], 1000 * 60 * 10)
+      if (!infoResult.success || !infoResult.stdout.trim()) {
+        continue
+      }
+      try {
+        const parsed = JSON.parse(infoResult.stdout) as {
+          casks?: Array<{ token?: string; name?: string[]; desc?: string; homepage?: string }>
+        }
+        for (const cask of parsed.casks ?? []) {
+          const token = cask.token?.trim()
+          if (!token) continue
+          metadataMap.set(token, {
+            name: cask.name?.[0]?.trim() || token,
+            description: cask.desc?.trim() || '',
+            homepage: cask.homepage?.trim() || null
+          })
+        }
+      } catch {
+        // Ignore invalid JSON chunk and fallback to token-only records.
+      }
+    }
+
+    const appRows: InstalledAppCacheItem[] = installedTokens.map((token) => {
+      const meta = metadataMap.get(token)
+      return {
+        token,
+        name: meta?.name || token,
+        description: meta?.description || '',
+        homepage: meta?.homepage || null,
+        installed: true
+      }
+    })
+
+    const transaction = db.transaction((rows: InstalledAppCacheItem[]) => {
+      const upsertInstalledApp = db.prepare(
+        `
+        INSERT INTO installed_apps_cache (
+          token, name, description, homepage, installed, last_seen_at, updated_at
+        ) VALUES (
+          @token, @name, @description, @homepage, @installed, @last_seen_at, @updated_at
+        )
+        ON CONFLICT(token) DO UPDATE SET
+          name = excluded.name,
+          description = excluded.description,
+          homepage = excluded.homepage,
+          installed = excluded.installed,
+          last_seen_at = excluded.last_seen_at,
+          updated_at = excluded.updated_at
+      `
+      )
+
+      rows.forEach((row) => {
+        upsertInstalledApp.run({
+          token: row.token,
+          name: row.name,
+          description: row.description,
+          homepage: row.homepage,
+          installed: row.installed ? 1 : 0,
+          last_seen_at: now,
+          updated_at: now
+        })
+      })
+
+      db.prepare('UPDATE installed_apps_cache SET installed = 0, updated_at = @updated_at').run({
+        updated_at: now
+      })
+      for (const token of installedSet) {
+        db.prepare('UPDATE installed_apps_cache SET installed = 1, updated_at = @updated_at WHERE token = @token').run({
+          token,
+          updated_at: now
+        })
+      }
+
+      db.prepare('UPDATE browser_catalog_cache SET installed = 0, updated_at = @updated_at').run({
+        updated_at: now
+      })
+      for (const token of installedSet) {
+        db.prepare('UPDATE browser_catalog_cache SET installed = 1, updated_at = @updated_at WHERE token = @token').run({
+          token,
+          updated_at: now
+        })
+      }
+
+      db.prepare(
+        `
+        INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
+        VALUES ('installed_apps_last_sync_status', 'ok', @updated_at)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          cache_value = excluded.cache_value,
+          updated_at = excluded.updated_at
+      `
+      ).run({ updated_at: now })
+
+      db.prepare(
+        `
+        INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
+        VALUES ('installed_apps_last_sync_count', @count, @updated_at)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          cache_value = excluded.cache_value,
+          updated_at = excluded.updated_at
+      `
+      ).run({ count: String(rows.length), updated_at: now })
+    })
+
+    transaction(appRows)
+
+    return { success: true, count: appRows.length }
+  } catch (error) {
+    return {
+      success: false,
+      count: 0,
+      error: error instanceof Error ? error.message : 'Failed to sync installed apps cache.'
+    }
   }
 }
 
@@ -180,6 +898,58 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.handle('brew:get-status', async () => {
     return getBrewStatus()
+  })
+  ipcMain.handle('terminal:create', async () => {
+    return createTerminalSession()
+  })
+  ipcMain.handle('terminal:write', async (_, payload: { sessionId: number; data: string }) => {
+    return writeTerminalSession(payload.sessionId, payload.data)
+  })
+  ipcMain.handle('terminal:close', async (_, payload: { sessionId: number }) => {
+    return closeTerminalSession(payload.sessionId)
+  })
+  ipcMain.handle('terminal:exec', async (_, payload: { command: string }) => {
+    return runShellCommand(payload.command, 1000 * 60 * 20)
+  })
+  ipcMain.handle('cache:get-browser-catalog', async () => {
+    return getBrowserCatalogCache()
+  })
+  ipcMain.handle('cache:set-browser-catalog', async (_, payload: BrowserCatalogCachePayload) => {
+    return setBrowserCatalogCache(payload)
+  })
+  ipcMain.handle('cache:get-installed-apps-status', async (_, payload: { tokens: string[] }) => {
+    return getInstalledAppsStatus(payload.tokens)
+  })
+  ipcMain.handle('cache:get-catalog-items', async (_, payload: { catalogKey: string }) => {
+    return getCatalogItemsCache(payload.catalogKey)
+  })
+  ipcMain.handle(
+    'cache:set-catalog-items',
+    async (_, payload: { catalogKey: string; data: CatalogCachePayload }) => {
+      return setCatalogItemsCache(payload.catalogKey, payload.data)
+    }
+  )
+  ipcMain.handle('cache:sync-installed-apps', async () => {
+    return syncInstalledAppsCache()
+  })
+  ipcMain.handle('brew:diagnose-version', async () => {
+    const brewPath = await resolveBrewPath()
+    if (!brewPath) {
+      return {
+        brewPath: null,
+        version: { success: false, code: null, stdout: '', stderr: 'brew not found' },
+        infoJson: { success: false, code: null, stdout: '', stderr: 'brew not found' },
+        infoText: { success: false, code: null, stdout: '', stderr: 'brew not found' }
+      }
+    }
+
+    const [version, infoJson, infoText] = await Promise.all([
+      runCommand(brewPath, ['--version']),
+      runCommand(brewPath, ['info', '--json=v2', 'brew']),
+      runCommand(brewPath, ['info', 'brew'])
+    ])
+
+    return { brewPath, version, infoJson, infoText }
   })
   ipcMain.handle('brew:install', async () => {
     const command =
@@ -205,7 +975,14 @@ app.whenReady().then(() => {
       }
     }
 
-    const result = await runShellCommand(`"${brewPath}" update && "${brewPath}" upgrade brew`, 1000 * 60 * 15)
+    const updateResult = await runCommand(brewPath, ['update'], 1000 * 60 * 15)
+    const result: CommandResult = {
+      success: updateResult.success,
+      code: updateResult.code,
+      stdout: updateResult.stdout,
+      stderr: updateResult.stderr,
+      error: updateResult.error
+    }
     const status = await getBrewStatus()
 
     return {
@@ -215,6 +992,7 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+  void syncInstalledAppsCache()
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
@@ -227,8 +1005,19 @@ app.whenReady().then(() => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
+  terminalSessions.forEach((session) => {
+    if (!session.killed) session.kill('SIGTERM')
+  })
+  terminalSessions.clear()
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+app.on('before-quit', () => {
+  if (cacheDb) {
+    cacheDb.close()
+    cacheDb = null
   }
 })
 

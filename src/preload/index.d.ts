@@ -2,8 +2,9 @@ import { ElectronAPI } from '@electron-toolkit/preload'
 
 type BrewStatus = {
   installed: boolean
-  brewPath: string | null
-  version: string | null
+  currentVersion: string | null
+  latestVersion: string | null
+  installedAppCount: number | null
 }
 
 type BrewActionResult = {
@@ -15,10 +16,97 @@ type BrewActionResult = {
   status: BrewStatus
 }
 
+type BrewDiagnoseResult = {
+  brewPath: string | null
+  version: {
+    success: boolean
+    code: number | null
+    stdout: string
+    stderr: string
+  }
+  infoJson: {
+    success: boolean
+    code: number | null
+    stdout: string
+    stderr: string
+  }
+  infoText: {
+    success: boolean
+    code: number | null
+    stdout: string
+    stderr: string
+  }
+}
+
+type BrowserCatalogCacheItem = {
+  token: string
+  name: string
+  description: string
+  homepage: string | null
+  iconUrl: string | null
+  fallbackIconUrl: string | null
+  installed: boolean
+}
+
+type BrowserCatalogCachePayload = {
+  brewInstalled: boolean | null
+  items: BrowserCatalogCacheItem[]
+}
+
+type CatalogCacheItem = {
+  token: string
+  name: string
+  description: string
+  homepage: string | null
+  iconUrl: string | null
+  fallbackIconUrl: string | null
+  installed: boolean
+  iconKey: string | null
+  installCommand?: string
+  uninstallCommand?: string
+  brewType?: 'cask' | 'formula'
+}
+
+type CatalogCachePayload = {
+  brewInstalled: boolean | null
+  items: CatalogCacheItem[]
+}
+
 type AppAPI = {
   getBrewStatus: () => Promise<BrewStatus>
+  diagnoseBrewVersion: () => Promise<BrewDiagnoseResult>
   installBrew: () => Promise<BrewActionResult>
   updateBrew: () => Promise<BrewActionResult>
+  createTerminalSession: () => Promise<{ sessionId: number }>
+  writeTerminalSession: (sessionId: number, data: string) => Promise<{ success: boolean }>
+  closeTerminalSession: (sessionId: number) => Promise<{ success: boolean }>
+  executeTerminalCommand: (command: string) => Promise<{
+    success: boolean
+    code: number | null
+    stdout: string
+    stderr: string
+    error?: string
+  }>
+  getBrowserCatalogCache: () => Promise<BrowserCatalogCachePayload>
+  setBrowserCatalogCache: (payload: BrowserCatalogCachePayload) => Promise<{ success: true }>
+  getInstalledAppsStatus: (tokens: string[]) => Promise<{
+    items: Array<{
+      token: string
+      installed: boolean
+      name: string | null
+      description: string | null
+      homepage: string | null
+    }>
+  }>
+  getCatalogItemsCache: (catalogKey: string) => Promise<CatalogCachePayload>
+  setCatalogItemsCache: (catalogKey: string, data: CatalogCachePayload) => Promise<{ success: true }>
+  syncInstalledAppsCache: () => Promise<{
+    success: boolean
+    count: number
+    error?: string
+  }>
+  onTerminalData: (callback: (payload: { sessionId: number; data: string }) => void) => () => void
+  onTerminalExit: (callback: (payload: { sessionId: number; code: number | null }) => void) => () => void
 }
 
 declare global {

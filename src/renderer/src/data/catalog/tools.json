@@ -1,0 +1,14 @@
+[
+  { "token": "git" },
+  { "token": "wget" },
+  { "token": "curl" },
+  { "token": "jq" },
+  { "token": "ripgrep" },
+  { "token": "fd" },
+  { "token": "fzf" },
+  { "token": "htop" },
+  { "token": "tmux" },
+  { "token": "tree" },
+  { "token": "neovim" },
+  { "token": "ffmpeg" }
+]
