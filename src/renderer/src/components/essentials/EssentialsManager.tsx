@@ -8,7 +8,7 @@ function EssentialsManager(): React.JSX.Element {
   return (
     <CatalogTab
       catalogKey="essentials"
-      title="装机必备"
+      title="Essentials"
       seeds={ESSENTIAL_SEEDS}
       defaultBrewType="cask"
     />

@@ -9,10 +9,12 @@ import icon from '../../resources/icon.png?asset'
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
+    title: 'appPad',
     width: 900,
     height: 670,
     show: false,
     autoHideMenuBar: true,
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -73,6 +75,7 @@ type InstalledAppCacheItem = {
   name: string
   description: string
   homepage: string | null
+  brewType: 'cask' | 'formula'
   installed: boolean
 }
 
@@ -650,6 +653,37 @@ function extractJsonObject(raw: string): string | null {
   return raw.slice(start, end + 1)
 }
 
+function parseBrewInfoJsonPayload(raw: string): {
+  latestVersion: string | null
+  installedVersion: string | null
+} | null {
+  const normalized = raw.trim()
+  if (!normalized) return null
+
+  const candidates = [normalized, extractJsonObject(normalized)].filter(
+    (candidate): candidate is string => Boolean(candidate)
+  )
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as {
+        formulae?: Array<{ versions?: { stable?: string }; installed?: Array<{ version?: string }> }>
+        casks?: Array<{ version?: string }>
+      }
+      const formula = parsed.formulae?.[0]
+      const cask = parsed.casks?.[0]
+      return {
+        latestVersion: formula?.versions?.stable?.trim() || cask?.version?.trim() || null,
+        installedVersion: formula?.installed?.[0]?.version?.trim() || null
+      }
+    } catch {
+      // Try next candidate payload
+    }
+  }
+
+  return null
+}
+
 async function resolveBrewPath(): Promise<string | null> {
   for (const brewPath of COMMON_BREW_PATHS) {
     if (existsSync(brewPath)) {
@@ -681,26 +715,38 @@ async function getBrewStatus(): Promise<BrewStatus> {
 
   const infoResult = await runCommand(brewPath, ['info', '--json=v2', 'brew'])
   let latestVersion: string | null = null
-  if (infoResult.stdout.trim() || infoResult.stderr.trim()) {
-    try {
-      const mergedOutput = `${infoResult.stdout}\n${infoResult.stderr}`.trim()
-      const jsonPayload = extractJsonObject(mergedOutput) ?? mergedOutput
-      const parsed = JSON.parse(jsonPayload) as {
-        formulae?: Array<{ versions?: { stable?: string }; installed?: Array<{ version?: string }> }>
-      }
-      latestVersion = parsed.formulae?.[0]?.versions?.stable?.trim() || null
-      if (!currentVersion) {
-        currentVersion = parsed.formulae?.[0]?.installed?.[0]?.version?.trim() || null
-      }
-    } catch {
-      latestVersion = null
+  const parsedStdout = parseBrewInfoJsonPayload(infoResult.stdout)
+  const parsedMerged =
+    parsedStdout ??
+    parseBrewInfoJsonPayload(`${infoResult.stdout}\n${infoResult.stderr}`)
+  if (parsedMerged) {
+    latestVersion = parsedMerged.latestVersion
+    if (!currentVersion) {
+      currentVersion = parsedMerged.installedVersion
+    }
+  }
+
+  if (!latestVersion) {
+    const formulaInfoResult = await runCommand(brewPath, ['info', '--json=v2', '--formula', 'brew'])
+    const parsedFormulaInfo = parseBrewInfoJsonPayload(formulaInfoResult.stdout)
+    if (parsedFormulaInfo?.latestVersion) {
+      latestVersion = parsedFormulaInfo.latestVersion
+    }
+    if (!currentVersion && parsedFormulaInfo?.installedVersion) {
+      currentVersion = parsedFormulaInfo.installedVersion
     }
   }
 
   if (!latestVersion) {
     const infoTextResult = await runCommand(brewPath, ['info', 'brew'])
-    const stableMatch = `${infoTextResult.stdout}\n${infoTextResult.stderr}`.match(/stable\s+([^\s,]+)/i)
+    const stableMatch = `${infoTextResult.stdout}\n${infoTextResult.stderr}`.match(
+      /stable[:\s]+([^\s,]+)/i
+    )
     latestVersion = stableMatch?.[1]?.trim() || null
+  }
+
+  if (!latestVersion && currentVersion) {
+    latestVersion = currentVersion
   }
 
   const caskListResult = await runCommand(brewPath, ['list', '--cask'])
@@ -728,6 +774,16 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
     const now = Date.now()
 
     if (!brewPath) {
+      db.prepare('UPDATE installed_apps_cache SET installed = 0, updated_at = @updated_at').run({
+        updated_at: now
+      })
+      db.prepare('UPDATE browser_catalog_cache SET installed = 0, updated_at = @updated_at').run({
+        updated_at: now
+      })
+      db.prepare('UPDATE catalog_items_cache SET installed = 0, updated_at = @updated_at').run({
+        updated_at: now
+      })
+      db.prepare('DELETE FROM catalog_items_cache WHERE catalog_key = ?').run('installed')
       db.prepare(
         `
         INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
@@ -737,11 +793,30 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
           updated_at = excluded.updated_at
       `
       ).run({ updated_at: now })
+      db.prepare(
+        `
+        INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
+        VALUES ('catalog_installed_brew_installed', '0', @updated_at)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          cache_value = excluded.cache_value,
+          updated_at = excluded.updated_at
+      `
+      ).run({ updated_at: now })
       return { success: false, count: 0, error: 'Homebrew is not installed.' }
     }
 
-    const listResult = await runCommand(brewPath, ['list', '--cask'])
-    if (!listResult.success) {
+    const caskListResult = await runCommand(brewPath, ['list', '--cask'])
+    const formulaListResult = await runCommand(brewPath, ['list', '--formula'])
+    if (!caskListResult.success || !formulaListResult.success) {
+      db.prepare('UPDATE installed_apps_cache SET installed = 0, updated_at = @updated_at').run({
+        updated_at: now
+      })
+      db.prepare('UPDATE browser_catalog_cache SET installed = 0, updated_at = @updated_at').run({
+        updated_at: now
+      })
+      db.prepare('UPDATE catalog_items_cache SET installed = 0, updated_at = @updated_at').run({
+        updated_at: now
+      })
       db.prepare(
         `
         INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
@@ -751,18 +826,36 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
           updated_at = excluded.updated_at
       `
       ).run({ updated_at: now })
-      return { success: false, count: 0, error: listResult.error || listResult.stderr || 'brew list failed' }
+      return {
+        success: false,
+        count: 0,
+        error:
+          caskListResult.error ||
+          caskListResult.stderr ||
+          formulaListResult.error ||
+          formulaListResult.stderr ||
+          'brew list failed'
+      }
     }
 
-    const installedTokens = listResult.stdout
+    const installedCaskTokens = caskListResult.stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+    const installedFormulaTokens = formulaListResult.stdout
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
 
+    const installedTokens = [...new Set([...installedCaskTokens, ...installedFormulaTokens])]
     const installedSet = new Set(installedTokens)
-    const metadataMap = new Map<string, { name: string; description: string; homepage: string | null }>()
+    const formulaSet = new Set(installedFormulaTokens)
+    const metadataMap = new Map<
+      string,
+      { name: string; description: string; homepage: string | null; brewType: 'cask' | 'formula' }
+    >()
 
-    for (const tokenChunk of chunkArray(installedTokens, 50)) {
+    for (const tokenChunk of chunkArray(installedCaskTokens, 50)) {
       if (tokenChunk.length === 0) continue
       const infoResult = await runCommand(brewPath, ['info', '--json=v2', ...tokenChunk], 1000 * 60 * 10)
       if (!infoResult.success || !infoResult.stdout.trim()) {
@@ -778,7 +871,33 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
           metadataMap.set(token, {
             name: cask.name?.[0]?.trim() || token,
             description: cask.desc?.trim() || '',
-            homepage: cask.homepage?.trim() || null
+            homepage: cask.homepage?.trim() || null,
+            brewType: 'cask'
+          })
+        }
+      } catch {
+        // Ignore invalid JSON chunk and fallback to token-only records.
+      }
+    }
+
+    for (const tokenChunk of chunkArray(installedFormulaTokens, 50)) {
+      if (tokenChunk.length === 0) continue
+      const infoResult = await runCommand(brewPath, ['info', '--json=v2', ...tokenChunk], 1000 * 60 * 10)
+      if (!infoResult.success || !infoResult.stdout.trim()) {
+        continue
+      }
+      try {
+        const parsed = JSON.parse(infoResult.stdout) as {
+          formulae?: Array<{ name?: string; desc?: string; homepage?: string }>
+        }
+        for (const formula of parsed.formulae ?? []) {
+          const token = formula.name?.trim()
+          if (!token) continue
+          metadataMap.set(token, {
+            name: token,
+            description: formula.desc?.trim() || '',
+            homepage: formula.homepage?.trim() || null,
+            brewType: 'formula'
           })
         }
       } catch {
@@ -793,6 +912,7 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
         name: meta?.name || token,
         description: meta?.description || '',
         homepage: meta?.homepage || null,
+        brewType: meta?.brewType || (formulaSet.has(token) ? 'formula' : 'cask'),
         installed: true
       }
     })
@@ -847,6 +967,62 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
         })
       }
 
+      db.prepare('UPDATE catalog_items_cache SET installed = 0, updated_at = @updated_at').run({
+        updated_at: now
+      })
+      for (const token of installedSet) {
+        db.prepare('UPDATE catalog_items_cache SET installed = 1, updated_at = @updated_at WHERE token = @token').run({
+          token,
+          updated_at: now
+        })
+      }
+
+      db.prepare('DELETE FROM catalog_items_cache WHERE catalog_key = ?').run('installed')
+      const upsertInstalledCatalogItem = db.prepare(
+        `
+        INSERT INTO catalog_items_cache (
+          catalog_key, token, name, description, homepage, icon_url, fallback_icon_url, installed,
+          icon_key, install_command, uninstall_command, brew_type, updated_at
+        ) VALUES (
+          @catalog_key, @token, @name, @description, @homepage, @icon_url, @fallback_icon_url, @installed,
+          @icon_key, @install_command, @uninstall_command, @brew_type, @updated_at
+        )
+      `
+      )
+
+      rows.forEach((row) => {
+        upsertInstalledCatalogItem.run({
+          catalog_key: 'installed',
+          token: row.token,
+          name: row.name,
+          description: row.description,
+          homepage: row.homepage,
+          icon_url: null,
+          fallback_icon_url: null,
+          installed: 1,
+          icon_key: null,
+          install_command: row.brewType === 'cask' ? `brew install --cask ${row.token}` : `brew install ${row.token}`,
+          uninstall_command:
+            row.brewType === 'cask' ? `brew uninstall --cask ${row.token}` : `brew uninstall ${row.token}`,
+          brew_type: row.brewType,
+          updated_at: now
+        })
+      })
+
+      db.prepare(
+        `
+        INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
+        VALUES (@cache_key, @cache_value, @updated_at)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          cache_value = excluded.cache_value,
+          updated_at = excluded.updated_at
+      `
+      ).run({
+        cache_key: 'catalog_installed_brew_installed',
+        cache_value: '1',
+        updated_at: now
+      })
+
       db.prepare(
         `
         INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
@@ -885,7 +1061,7 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.appPad')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.

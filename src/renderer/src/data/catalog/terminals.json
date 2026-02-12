@@ -1,0 +1,74 @@
+[
+  {
+    "token": "iterm2",
+    "brewType": "cask",
+    "name": "iTerm2",
+    "description": "Terminal emulator as an alternative to Apple's Terminal.",
+    "fallbackDomain": "iterm2.com"
+  },
+  {
+    "token": "ghostty",
+    "brewType": "cask",
+    "name": "Ghostty",
+    "description": "Platform-native terminal emulator with GPU acceleration.",
+    "fallbackDomain": "ghostty.org"
+  },
+  {
+    "token": "warp",
+    "brewType": "cask",
+    "name": "Warp",
+    "description": "Rust-based terminal with modern command workflows.",
+    "fallbackDomain": "warp.dev"
+  },
+  {
+    "token": "kitty",
+    "brewType": "cask",
+    "name": "kitty",
+    "description": "Fast GPU-based terminal emulator.",
+    "fallbackDomain": "sw.kovidgoyal.net/kitty"
+  },
+  {
+    "token": "wezterm",
+    "brewType": "cask",
+    "name": "WezTerm",
+    "description": "GPU-accelerated terminal emulator and multiplexer.",
+    "fallbackDomain": "wezfurlong.org"
+  },
+  {
+    "token": "alacritty",
+    "brewType": "cask",
+    "name": "Alacritty",
+    "description": "Fast cross-platform OpenGL terminal emulator.",
+    "fallbackDomain": "alacritty.org"
+  },
+  {
+    "token": "tabby",
+    "brewType": "cask",
+    "name": "Tabby",
+    "description": "Terminal emulator with SSH and serial support.",
+    "fallbackDomain": "tabby.sh"
+  },
+  {
+    "token": "kaku",
+    "brewType": "cask",
+    "name": "Kaku",
+    "description": "A modern terminal experience with custom workflows.",
+    "fallbackDomain": "github.com/tw93/kaku",
+    "installCommand": "brew tap tw93/tap && brew install --cask tw93/tap/kaku",
+    "uninstallCommand": "brew uninstall --cask kaku"
+  },
+  {
+    "token": "hyper",
+    "brewType": "cask",
+    "name": "Hyper",
+    "description": "Electron-based terminal built with web technologies.",
+    "fallbackDomain": "hyper.is"
+  },
+  {
+    "token": "zoc",
+    "brewType": "cask",
+    "name": "ZOC",
+    "description": "Professional SSH and Telnet terminal emulator.",
+    "fallbackDomain": "emtec.com/zoc"
+  }
+]

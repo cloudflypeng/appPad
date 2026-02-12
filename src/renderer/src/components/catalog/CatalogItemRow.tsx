@@ -26,7 +26,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
 type IconConfig = {
-  Component: ComponentType<{ size?: number | string; color?: string; className?: string; title?: string }>
+  Component: ComponentType<{
+    size?: number | string
+    color?: string
+    className?: string
+    title?: string
+  }>
   color: string
 }
 
@@ -52,35 +57,38 @@ type CatalogItemRowProps = {
   onToggle: (item: CatalogItem) => void
 }
 
-function CatalogItemRow({ item, disabled = false, running = false, onToggle }: CatalogItemRowProps): React.JSX.Element {
+function CatalogItemRow({
+  item,
+  disabled = false,
+  running = false,
+  onToggle
+}: CatalogItemRowProps): React.JSX.Element {
   const icon = item.iconKey ? ICON_MAP[item.iconKey] : undefined
 
   return (
     <div className="flex flex-col gap-3 rounded-md border bg-background px-4 py-3 md:flex-row md:items-center md:justify-between">
-      <div className="flex min-w-0 items-start gap-3">
-        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
-          {icon ? (
-            <icon.Component size={20} color={icon.color} />
-          ) : item.iconUrl ? (
-            <img
-              src={item.iconUrl}
-              alt={`${item.name} icon`}
-              className="h-6 w-6"
-              onError={(event) => {
-                const el = event.currentTarget
-                if (el.dataset.fallbackTried !== '1' && item.fallbackIconUrl) {
-                  el.dataset.fallbackTried = '1'
-                  el.src = item.fallbackIconUrl
-                  return
-                }
-                el.src = GENERIC_ICON
-                el.onerror = null
-              }}
-            />
-          ) : (
-            <Globe className="h-5 w-5 text-muted-foreground" />
-          )}
-        </div>
+      <div className="flex min-w-0 items-center gap-3">
+        {icon ? (
+          <icon.Component size={40} color={icon.color} className="mt-0.5 shrink-0" />
+        ) : item.iconUrl ? (
+          <img
+            src={item.iconUrl}
+            alt={`${item.name} icon`}
+            className="mt-0.5 h-10 w-10 shrink-0"
+            onError={(event) => {
+              const el = event.currentTarget
+              if (el.dataset.fallbackTried !== '1' && item.fallbackIconUrl) {
+                el.dataset.fallbackTried = '1'
+                el.src = item.fallbackIconUrl
+                return
+              }
+              el.src = GENERIC_ICON
+              el.onerror = null
+            }}
+          />
+        ) : (
+          <Globe className="mt-0.5 h-8 w-8 shrink-0 text-muted-foreground" />
+        )}
 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -96,13 +104,15 @@ function CatalogItemRow({ item, disabled = false, running = false, onToggle }: C
         </div>
       </div>
 
-      <Button
-        size="sm"
-        onClick={() => onToggle(item)}
-        disabled={disabled}
-      >
+      <Button size="sm" onClick={() => onToggle(item)} disabled={disabled}>
         <Download className="mr-2 h-4 w-4" />
-        {running ? item.installed ? 'Uninstalling...' : 'Installing...' : item.installed ? 'Uninstall' : 'Install'}
+        {running
+          ? item.installed
+            ? 'Uninstalling...'
+            : 'Installing...'
+          : item.installed
+            ? 'Uninstall'
+            : 'Install'}
       </Button>
     </div>
   )
