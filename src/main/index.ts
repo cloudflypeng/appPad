@@ -1,5 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
+import { spawn } from 'child_process'
+import { existsSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
@@ -35,6 +37,131 @@ function createWindow(): void {
   }
 }
 
+type BrewStatus = {
+  installed: boolean
+  brewPath: string | null
+  version: string | null
+}
+
+type CommandResult = {
+  success: boolean
+  code: number | null
+  stdout: string
+  stderr: string
+  error?: string
+}
+
+const COMMON_BREW_PATHS = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']
+
+function runShellCommand(command: string, timeoutMs = 1000 * 60 * 20): Promise<CommandResult> {
+  return new Promise((resolve) => {
+    const normalizedPath = [
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+      process.env.PATH ?? ''
+    ]
+      .filter(Boolean)
+      .join(':')
+
+    const child = spawn('/bin/zsh', ['-lc', command], {
+      env: {
+        ...process.env,
+        PATH: normalizedPath,
+        HOMEBREW_NO_ENV_HINTS: '1',
+        NONINTERACTIVE: '1',
+        CI: '1'
+      }
+    })
+
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+
+    const finalize = (result: CommandResult): void => {
+      if (settled) return
+      settled = true
+      resolve(result)
+    }
+
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM')
+      finalize({
+        success: false,
+        code: null,
+        stdout,
+        stderr,
+        error: `Command timed out after ${Math.round(timeoutMs / 1000)}s`
+      })
+    }, timeoutMs)
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString()
+    })
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      finalize({
+        success: false,
+        code: null,
+        stdout,
+        stderr,
+        error: error.message
+      })
+    })
+
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      finalize({
+        success: code === 0,
+        code,
+        stdout,
+        stderr
+      })
+    })
+  })
+}
+
+async function resolveBrewPath(): Promise<string | null> {
+  for (const brewPath of COMMON_BREW_PATHS) {
+    if (existsSync(brewPath)) {
+      return brewPath
+    }
+  }
+
+  const pathResult = await runShellCommand('command -v brew')
+  const brewPath = pathResult.success ? pathResult.stdout.trim() : ''
+
+  return brewPath || null
+}
+
+async function getBrewStatus(): Promise<BrewStatus> {
+  const brewPath = await resolveBrewPath()
+  if (!brewPath) {
+    return {
+      installed: false,
+      brewPath: null,
+      version: null
+    }
+  }
+
+  const versionResult = await runShellCommand(`"${brewPath}" --version`)
+  const versionLine = versionResult.stdout.split('\n').find((line) => line.trim().length > 0) ?? null
+
+  return {
+    installed: true,
+    brewPath,
+    version: versionLine
+  }
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -51,6 +178,41 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+  ipcMain.handle('brew:get-status', async () => {
+    return getBrewStatus()
+  })
+  ipcMain.handle('brew:install', async () => {
+    const command =
+      'NONINTERACTIVE=1 CI=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+    const result = await runShellCommand(command, 1000 * 60 * 30)
+    const status = await getBrewStatus()
+
+    return {
+      ...result,
+      status
+    }
+  })
+  ipcMain.handle('brew:update', async () => {
+    const brewPath = await resolveBrewPath()
+    if (!brewPath) {
+      return {
+        success: false,
+        code: null,
+        stdout: '',
+        stderr: '',
+        error: 'Homebrew is not installed.',
+        status: await getBrewStatus()
+      }
+    }
+
+    const result = await runShellCommand(`"${brewPath}" update && "${brewPath}" upgrade brew`, 1000 * 60 * 15)
+    const status = await getBrewStatus()
+
+    return {
+      ...result,
+      status
+    }
+  })
 
   createWindow()
 
