@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { spawn } from 'child_process'
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
+import { chmodSync, createWriteStream, existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import Database from 'better-sqlite3'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import electronUpdater from 'electron-updater'
@@ -722,6 +722,69 @@ function sendUpdateEvent(channel: string, payload?: unknown): void {
   })
 }
 
+async function downloadFileWithProgress(url: string, targetPath: string): Promise<void> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Download failed: ${response.status} ${response.statusText}`)
+  }
+
+  const totalBytes = Number(response.headers.get('content-length') ?? '0')
+  const reader = response.body?.getReader()
+  if (!reader) {
+    const arrayBuffer = await response.arrayBuffer()
+    writeFileSync(targetPath, Buffer.from(arrayBuffer))
+    sendUpdateEvent('update-download-progress', { percent: 100 })
+    return
+  }
+
+  const output = createWriteStream(targetPath)
+  let downloadedBytes = 0
+  let lastPercent = -1
+
+  const emitProgress = (): void => {
+    if (totalBytes <= 0) return
+    const percent = Math.min(100, Math.floor((downloadedBytes / totalBytes) * 100))
+    if (percent !== lastPercent) {
+      lastPercent = percent
+      sendUpdateEvent('update-download-progress', { percent })
+    }
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value || value.length === 0) continue
+
+      downloadedBytes += value.length
+      emitProgress()
+
+      const chunk = Buffer.from(value)
+      if (!output.write(chunk)) {
+        await new Promise<void>((resolve, reject) => {
+          output.once('drain', resolve)
+          output.once('error', reject)
+        })
+      }
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      output.end(() => resolve())
+      output.once('error', reject)
+    })
+
+    sendUpdateEvent('update-download-progress', { percent: 100 })
+  } catch (error) {
+    output.destroy()
+    try {
+      if (existsSync(targetPath)) unlinkSync(targetPath)
+    } catch {
+      // best-effort cleanup
+    }
+    throw error
+  }
+}
+
 function parseReleaseNotes(raw: unknown): string {
   const toPlainText = (value: string): string => {
     return value
@@ -903,29 +966,22 @@ function setupUpdateHandlers(): void {
         downloadedDmgPath = targetPath
 
         sendUpdateEvent('update-download-progress', { percent: 0 })
-        let response: Response | null = null
         let lastError = ''
+        let selectedUrl = ''
         for (const candidateUrl of dmgUrlCandidates) {
           try {
-            const res = await fetch(candidateUrl)
-            if (!res.ok) {
-              lastError = `${res.status} ${res.statusText}`.trim()
-              continue
-            }
-            response = res
+            await downloadFileWithProgress(candidateUrl, targetPath)
+            selectedUrl = candidateUrl
             break
           } catch (error) {
             lastError = error instanceof Error ? error.message : String(error)
           }
         }
-        if (!response) {
+        if (!selectedUrl) {
           throw new Error(
             `Download failed for all DMG URL candidates: ${dmgUrlCandidates.join(', ')}${lastError ? ` (${lastError})` : ''}`
           )
         }
-        const arrayBuffer = await response.arrayBuffer()
-        writeFileSync(targetPath, Buffer.from(arrayBuffer))
-        sendUpdateEvent('update-download-progress', { percent: 100 })
         sendUpdateEvent('update-downloaded')
 
         return { success: true, message: 'Update downloaded.' }
