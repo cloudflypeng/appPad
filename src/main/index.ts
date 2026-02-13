@@ -745,63 +745,14 @@ function isAbsoluteHttpUrl(value: string): boolean {
   return /^https?:\/\//.test(value)
 }
 
-function normalizeVersion(version: string): string {
-  return version.replace(/^v/i, '').trim()
-}
-
-function compareSemver(a: string, b: string): number {
-  const aParts = normalizeVersion(a)
-    .split('.')
-    .map((part) => Number.parseInt(part, 10) || 0)
-  const bParts = normalizeVersion(b)
-    .split('.')
-    .map((part) => Number.parseInt(part, 10) || 0)
-  const length = Math.max(aParts.length, bParts.length)
-  for (let i = 0; i < length; i += 1) {
-    const av = aParts[i] ?? 0
-    const bv = bParts[i] ?? 0
-    if (av > bv) return 1
-    if (av < bv) return -1
-  }
-  return 0
-}
-
-async function fetchLatestGitHubRelease(): Promise<{
-  version: string
-  tagName: string
-  releaseNotes: string
-  dmgDownloadUrl: string | null
-}> {
-  const response = await fetch('https://api.github.com/repos/cloudflypeng/appPad/releases/latest', {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'apppad-updater'
-    }
+function resolveMacDmgUrlFromUpdateInfo(updateInfo: any): string | null {
+  const files = Array.isArray(updateInfo?.files) ? updateInfo.files : []
+  const dmgFile = files.find((item: any) => {
+    const rawUrl = String(item?.url ?? '').toLowerCase()
+    return rawUrl.endsWith('.dmg')
   })
-  if (!response.ok) {
-    throw new Error(`GitHub release API failed: ${response.status} ${response.statusText}`)
-  }
-  const payload = (await response.json()) as {
-    tag_name?: string
-    body?: string
-    assets?: Array<{ browser_download_url?: string; name?: string }>
-  }
-
-  const tagName = payload.tag_name?.trim() || ''
-  const version = normalizeVersion(tagName || app.getVersion())
-  const dmgAsset = (payload.assets ?? []).find((asset) =>
-    String(asset.browser_download_url ?? '').toLowerCase().endsWith('.dmg')
-  )
-  const dmgDownloadUrl = dmgAsset?.browser_download_url && isAbsoluteHttpUrl(dmgAsset.browser_download_url)
-    ? dmgAsset.browser_download_url
-    : null
-
-  return {
-    version,
-    tagName: tagName || `v${version}`,
-    releaseNotes: parseReleaseNotes(payload.body ?? ''),
-    dmgDownloadUrl
-  }
+  const url = String(dmgFile?.url ?? '')
+  return isAbsoluteHttpUrl(url) ? url : null
 }
 
 function setupUpdateHandlers(): void {
