@@ -146,6 +146,44 @@ const api = {
       } | null
       updatedAt: number | null
     }>,
+  checkForUpdates: () =>
+    ipcRenderer.invoke('check-for-updates') as Promise<{
+      success: boolean
+      updateAvailable: boolean
+      currentVersion: string
+      latestVersion?: string
+      releaseNotes?: string
+      downloadUrl?: string | null
+      error?: string
+    }>,
+  downloadAndInstallUpdate: () =>
+    ipcRenderer.invoke('download-and-install-update') as Promise<{
+      success: boolean
+      message?: string
+      error?: string
+    }>,
+  quitAndInstall: () => ipcRenderer.invoke('quit-and-install') as Promise<{ success: boolean }>,
+  getAppVersion: () =>
+    ipcRenderer.invoke('get-app-version') as Promise<{ version: string; name: string }>,
+  onUpdateDownloadProgress: (callback: (payload: { percent?: number }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { percent?: number }) => {
+      callback(payload)
+    }
+    ipcRenderer.on('update-download-progress', listener)
+    return () => ipcRenderer.removeListener('update-download-progress', listener)
+  },
+  onUpdateDownloaded: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('update-downloaded', listener)
+    return () => ipcRenderer.removeListener('update-downloaded', listener)
+  },
+  onUpdateError: (callback: (message: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, message: string) => {
+      callback(message)
+    }
+    ipcRenderer.on('update-error', listener)
+    return () => ipcRenderer.removeListener('update-error', listener)
+  },
   onTerminalData: (callback: (payload: { sessionId: number; data: string }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: { sessionId: number; data: string }) => {
       callback(payload)

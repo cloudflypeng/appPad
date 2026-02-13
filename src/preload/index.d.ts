@@ -128,6 +128,25 @@ type AppAPI = {
   refreshBrewStatusCache: () => Promise<CachedStatusPayload<BrewStatus>>
   getCachedMoleStatus: () => Promise<CachedStatusPayload<MoleStatus>>
   refreshMoleStatusCache: () => Promise<CachedStatusPayload<MoleStatus>>
+  checkForUpdates: () => Promise<{
+    success: boolean
+    updateAvailable: boolean
+    currentVersion: string
+    latestVersion?: string
+    releaseNotes?: string
+    downloadUrl?: string | null
+    error?: string
+  }>
+  downloadAndInstallUpdate: () => Promise<{
+    success: boolean
+    message?: string
+    error?: string
+  }>
+  quitAndInstall: () => Promise<{ success: boolean }>
+  getAppVersion: () => Promise<{ version: string; name: string }>
+  onUpdateDownloadProgress: (callback: (payload: { percent?: number }) => void) => () => void
+  onUpdateDownloaded: (callback: () => void) => () => void
+  onUpdateError: (callback: (message: string) => void) => () => void
   onTerminalData: (callback: (payload: { sessionId: number; data: string }) => void) => () => void
   onTerminalExit: (callback: (payload: { sessionId: number; code: number | null }) => void) => () => void
 }

@@ -1,5 +1,6 @@
 import { type CSSProperties, useRef, useState } from 'react'
 import {
+  ArrowUpCircle,
   Compass,
   List,
   LoaderCircle,
@@ -21,6 +22,7 @@ import GlobalTerminalPanel from '@/components/layout/GlobalTerminalPanel'
 import MoleManager from '@/components/mole/MoleManager'
 import TerminalManager from '@/components/terminal/TerminalManager'
 import ToolsManager from '@/components/tools/ToolsManager'
+import AppUpdateManager from '@/components/update/AppUpdateManager'
 import { Button } from '@/components/ui/button'
 import {
   Sidebar,
@@ -41,18 +43,20 @@ const APP_TOPBAR_REFRESH_EVENT = 'app:topbar-refresh'
 
 function App(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<
-    'homebrew' | 'installed' | 'search' | 'browser' | 'terminal' | 'essentials' | 'tools' | 'mole'
+    | 'homebrew'
+    | 'installed'
+    | 'search'
+    | 'browser'
+    | 'terminal'
+    | 'essentials'
+    | 'tools'
+    | 'mole'
+    | 'appUpdate'
   >('homebrew')
   const [syncingInstalledApps, setSyncingInstalledApps] = useState(false)
   const insetContentRef = useRef<HTMLDivElement | null>(null)
 
-  const tabs = [
-    {
-      key: 'homebrew' as const,
-      title: 'Homebrew',
-      description: 'Manage Homebrew installation and status.',
-      icon: Package
-    },
+  const navigationTabs = [
     {
       key: 'installed' as const,
       title: 'Installed',
@@ -88,14 +92,30 @@ function App(): React.JSX.Element {
       title: 'Tool',
       description: 'Common tools installable via Homebrew.',
       icon: Wrench
+    }
+  ]
+
+  const updateTabs = [
+    {
+      key: 'homebrew' as const,
+      title: 'Homebrew',
+      description: 'Manage Homebrew installation and status.',
+      icon: Package
     },
     {
       key: 'mole' as const,
       title: 'Mole',
       description: 'Run and manage Mole commands with GUI controls.',
       icon: Wrench
+    },
+    {
+      key: 'appUpdate' as const,
+      title: 'App Update',
+      description: 'Check and install app updates.',
+      icon: ArrowUpCircle
     }
   ]
+  const tabs = [...navigationTabs, ...updateTabs]
 
   const activeTabConfig = tabs.find((tab) => tab.key === activeTab)
   const activeTitle = activeTabConfig?.title ?? 'appPad'
@@ -128,7 +148,28 @@ function App(): React.JSX.Element {
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu className="space-y-1 px-2">
-                {tabs.map((tab) => (
+                {navigationTabs.map((tab) => (
+                  <SidebarMenuItem key={tab.key}>
+                    <SidebarMenuButton
+                      className="h-9 rounded-lg px-3 text-[13px] font-medium"
+                      isActive={activeTab === tab.key}
+                      onClick={() => setActiveTab(tab.key)}
+                    >
+                      <tab.icon />
+                      <span>{tab.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+          <SidebarGroup>
+            <SidebarGroupLabel className="px-3 text-[11px] uppercase tracking-[0.08em]">
+              Updates
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu className="space-y-1 px-2">
+                {updateTabs.map((tab) => (
                   <SidebarMenuItem key={tab.key}>
                     <SidebarMenuButton
                       className="h-9 rounded-lg px-3 text-[13px] font-medium"
@@ -179,6 +220,7 @@ function App(): React.JSX.Element {
             {activeTab === 'essentials' ? <EssentialsManager /> : null}
             {activeTab === 'tools' ? <ToolsManager /> : null}
             {activeTab === 'mole' ? <MoleManager /> : null}
+            {activeTab === 'appUpdate' ? <AppUpdateManager /> : null}
           </div>
         </div>
       </SidebarInset>

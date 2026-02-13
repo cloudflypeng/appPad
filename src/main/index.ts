@@ -1,10 +1,13 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
-import { existsSync } from 'fs'
+import { chmodSync, existsSync, writeFileSync } from 'fs'
 import Database from 'better-sqlite3'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import electronUpdater from 'electron-updater'
 import icon from '../renderer/src/assets/logo.png?asset'
+
+const { autoUpdater } = electronUpdater
 
 function createWindow(): void {
   // Create the browser window.
@@ -130,6 +133,14 @@ const COMMON_BREW_PATHS = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']
 let nextTerminalSessionId = 1
 const terminalSessions = new Map<number, ChildProcessWithoutNullStreams>()
 let cacheDb: Database.Database | null = null
+let currentUpdateInfo: any = null
+let downloadedDmgPath: string | null = null
+
+if (!app.isPackaged) {
+  autoUpdater.forceDevUpdateConfig = true
+}
+autoUpdater.autoDownload = false
+autoUpdater.autoInstallOnAppQuit = true
 
 function getCacheDb(): Database.Database {
   if (cacheDb) return cacheDb
@@ -688,6 +699,233 @@ function runShellCommand(command: string, timeoutMs = 1000 * 60 * 20): Promise<C
         stderr
       })
     })
+  })
+}
+
+function sendUpdateEvent(channel: string, payload?: unknown): void {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send(channel, payload)
+  })
+}
+
+function parseReleaseNotes(raw: unknown): string {
+  const toPlainText = (value: string): string => {
+    return value
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+
+  if (typeof raw === 'string') return toPlainText(raw)
+  if (!Array.isArray(raw)) return ''
+  return raw
+    .map((item) => {
+      if (item && typeof item === 'object' && 'note' in item) {
+        return toPlainText(String((item as { note?: unknown }).note ?? ''))
+      }
+      return ''
+    })
+    .filter(Boolean)
+    .join('\n')
+}
+
+function escapeForDoubleQuotes(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function isAbsoluteHttpUrl(value: string): boolean {
+  return /^https?:\/\//.test(value)
+}
+
+function resolveMacDmgUrlFromUpdateInfo(updateInfo: any): string | null {
+  const files = Array.isArray(updateInfo?.files) ? updateInfo.files : []
+  const dmgFile = files.find((file: any) => typeof file?.url === 'string' && file.url.endsWith('.dmg'))
+  if (dmgFile?.url && isAbsoluteHttpUrl(dmgFile.url)) {
+    return dmgFile.url
+  }
+  return null
+}
+
+function setupUpdateHandlers(): void {
+  ipcMain.handle('check-for-updates', async () => {
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      if (!result) {
+        return {
+          success: true,
+          updateAvailable: false,
+          currentVersion: `v${app.getVersion()}`,
+          latestVersion: `v${app.getVersion()}`,
+          releaseNotes: ''
+        }
+      }
+
+      currentUpdateInfo = result.updateInfo
+      const latestVersion = `v${result.updateInfo.version}`
+      const currentVersion = `v${app.getVersion()}`
+      const updateAvailable = result.updateInfo.version !== app.getVersion()
+      const dmgDownloadUrl = resolveMacDmgUrlFromUpdateInfo(result.updateInfo)
+
+      return {
+        success: true,
+        updateAvailable,
+        currentVersion,
+        latestVersion,
+        releaseNotes: parseReleaseNotes((result.updateInfo as any).releaseNotes),
+        downloadUrl: dmgDownloadUrl
+      }
+    } catch (error) {
+      return {
+        success: false,
+        updateAvailable: false,
+        error: error instanceof Error ? error.message : 'Failed to check updates.',
+        currentVersion: `v${app.getVersion()}`
+      }
+    }
+  })
+
+  ipcMain.handle('download-and-install-update', async () => {
+    if (process.platform === 'darwin') {
+      try {
+        if (!currentUpdateInfo) {
+          const result = await autoUpdater.checkForUpdates()
+          if (result) currentUpdateInfo = result.updateInfo
+        }
+
+        if (!currentUpdateInfo) {
+          throw new Error('Unable to resolve update info.')
+        }
+
+        const dmgDownloadUrl = resolveMacDmgUrlFromUpdateInfo(currentUpdateInfo)
+        if (!dmgDownloadUrl) {
+          throw new Error('No downloadable DMG URL resolved from update metadata.')
+        }
+        if (!isAbsoluteHttpUrl(dmgDownloadUrl)) {
+          throw new Error(
+            'DMG URL is not absolute. Configure update feed to return absolute asset URLs.'
+          )
+        }
+
+        const version = currentUpdateInfo.version || app.getVersion()
+        const fileNameFromUrl = String(dmgDownloadUrl).split('/').pop()?.split('?')[0]
+        const fileName = fileNameFromUrl && fileNameFromUrl.length > 0 ? fileNameFromUrl : `apppad-${version}.dmg`
+        const targetPath = join(app.getPath('temp'), fileName)
+        downloadedDmgPath = targetPath
+
+        sendUpdateEvent('update-download-progress', { percent: 0 })
+        const response = await fetch(dmgDownloadUrl)
+        if (!response.ok) {
+          throw new Error(`Download failed: ${response.status} ${response.statusText}`)
+        }
+        const arrayBuffer = await response.arrayBuffer()
+        writeFileSync(targetPath, Buffer.from(arrayBuffer))
+        sendUpdateEvent('update-download-progress', { percent: 100 })
+        sendUpdateEvent('update-downloaded')
+
+        return { success: true, message: 'Update downloaded.' }
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to download update.'
+        }
+      }
+    }
+
+    try {
+      await autoUpdater.downloadUpdate()
+      return { success: true, message: 'Update download started.' }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to start update download.'
+      }
+    }
+  })
+
+  ipcMain.handle('quit-and-install', () => {
+    if (process.platform === 'darwin' && downloadedDmgPath) {
+      const currentAppPath = app.getPath('exe').replace(/\.app\/Contents\/MacOS\/.*$/, '.app')
+      const installScriptPath = join(app.getPath('temp'), 'apppad-install-update.sh')
+      const escapedDmgPath = escapeForDoubleQuotes(downloadedDmgPath)
+      const escapedAppPath = escapeForDoubleQuotes(currentAppPath)
+      const escapedScriptPath = escapeForDoubleQuotes(installScriptPath)
+
+      const scriptContent = `#!/bin/bash
+set -e
+LOG_FILE="$HOME/Library/Logs/apppad-update.log"
+DMG_PATH="${escapedDmgPath}"
+APP_PATH="${escapedAppPath}"
+SCRIPT_PATH="${escapedScriptPath}"
+
+echo "[$(date)] Starting update process..." > "$LOG_FILE"
+echo "DMG: $DMG_PATH" >> "$LOG_FILE"
+echo "Target: $APP_PATH" >> "$LOG_FILE"
+
+sleep 1
+
+MOUNT_POINT=$(mktemp -d /tmp/apppad-update-XXXXXX)
+echo "Mounting to $MOUNT_POINT..." >> "$LOG_FILE"
+
+if hdiutil attach -nobrowse -noautoopen -mountpoint "$MOUNT_POINT" "$DMG_PATH" >> "$LOG_FILE" 2>&1; then
+  SOURCE_APP=$(find "$MOUNT_POINT" -maxdepth 1 -name "*.app" -print -quit)
+  echo "Source app found: $SOURCE_APP" >> "$LOG_FILE"
+
+  if [ -n "$SOURCE_APP" ] && [ -d "$SOURCE_APP" ]; then
+    rm -rf "$APP_PATH"
+    cp -R "$SOURCE_APP" "$APP_PATH"
+    if [ -d "$APP_PATH" ]; then
+      xattr -r -d com.apple.quarantine "$APP_PATH" 2>/dev/null || true
+      open "$APP_PATH"
+    fi
+  fi
+
+  hdiutil detach "$MOUNT_POINT" >> "$LOG_FILE" 2>&1 || true
+  rm -rf "$MOUNT_POINT"
+fi
+
+rm -f "$SCRIPT_PATH"
+`
+      writeFileSync(installScriptPath, scriptContent)
+      chmodSync(installScriptPath, 0o755)
+
+      spawn(installScriptPath, {
+        detached: true,
+        stdio: 'ignore'
+      }).unref()
+
+      app.quit()
+      return { success: true }
+    }
+
+    autoUpdater.quitAndInstall()
+    return { success: true }
+  })
+
+  ipcMain.handle('get-app-version', () => {
+    return {
+      version: app.getVersion(),
+      name: app.getName()
+    }
+  })
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    sendUpdateEvent('update-download-progress', progressObj)
+  })
+
+  autoUpdater.on('update-downloaded', () => {
+    sendUpdateEvent('update-downloaded')
+  })
+
+  autoUpdater.on('error', (error) => {
+    sendUpdateEvent('update-error', error.message)
   })
 }
 
@@ -1267,6 +1505,7 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+  setupUpdateHandlers()
   ipcMain.handle('brew:get-status', async () => {
     const refreshed = await refreshBrewStatusCache()
     return refreshed.status

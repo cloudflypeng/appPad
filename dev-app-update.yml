@@ -1,3 +1,5 @@
-provider: generic
-url: https://example.com/auto-updates
+provider: github
+owner: cloudflypeng
+repo: appPad
+releaseType: release
 updaterCacheDirName: apppad-updater

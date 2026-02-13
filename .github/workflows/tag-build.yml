@@ -70,7 +70,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build mac artifacts (zip + dmg)
+      - name: Build mac artifacts (dmg only)
         env:
           ELECTRON_BUILDER_BINARIES_DOWNLOAD_OVERRIDE_URL: https://github.com/electron-userland/electron-builder-binaries/releases/download/dmg-builder@1.2.0
         run: pnpm run build:mac
@@ -82,7 +82,7 @@ jobs:
         run: |
           set -euo pipefail
           ls -la dist || true
-          for file in dist/*.dmg dist/*.zip dist/*.blockmap dist/latest-mac.yml dist/latest.yml; do
+          for file in dist/*.dmg dist/*.dmg.blockmap; do
             if [ -f "$file" ]; then
               echo "Uploading $file..."
               gh release upload "${{ github.ref_name }}" "$file" --clobber
