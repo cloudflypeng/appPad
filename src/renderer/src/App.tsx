@@ -42,6 +42,7 @@ import {
 const APP_TOPBAR_REFRESH_EVENT = 'app:topbar-refresh'
 
 function App(): React.JSX.Element {
+  console.log('apppad')
   const [activeTab, setActiveTab] = useState<
     | 'homebrew'
     | 'installed'
