@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
-import { chmodSync, existsSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import Database from 'better-sqlite3'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import electronUpdater from 'electron-updater'
@@ -745,14 +745,69 @@ function isAbsoluteHttpUrl(value: string): boolean {
   return /^https?:\/\//.test(value)
 }
 
-function resolveMacDmgUrlFromUpdateInfo(updateInfo: any): string | null {
+function readGithubPublishConfig(): { owner: string; repo: string } {
+  const fallback = { owner: 'cloudflypeng', repo: 'appPad' }
+  const configPath = app.isPackaged
+    ? join(process.resourcesPath, 'app-update.yml')
+    : join(process.cwd(), 'dev-app-update.yml')
+
+  try {
+    if (!existsSync(configPath)) {
+      return fallback
+    }
+
+    const content = readFileSync(configPath, 'utf8')
+    const ownerMatch = content.match(/^\s*owner:\s*([^\s#]+)\s*$/m)
+    const repoMatch = content.match(/^\s*repo:\s*([^\s#]+)\s*$/m)
+    const owner = ownerMatch?.[1] ?? fallback.owner
+    const repo = repoMatch?.[1] ?? fallback.repo
+    return { owner, repo }
+  } catch {
+    return fallback
+  }
+}
+
+function resolveMacDmgAssetFromUpdateInfo(updateInfo: any): string | null {
   const files = Array.isArray(updateInfo?.files) ? updateInfo.files : []
   const dmgFile = files.find((item: any) => {
     const rawUrl = String(item?.url ?? '').toLowerCase()
     return rawUrl.endsWith('.dmg')
   })
-  const url = String(dmgFile?.url ?? '')
-  return isAbsoluteHttpUrl(url) ? url : null
+  const dmgUrl = String(dmgFile?.url ?? '')
+  if (dmgUrl) return dmgUrl
+
+  const fallbackPath = String(updateInfo?.path ?? '')
+  return fallbackPath.toLowerCase().endsWith('.dmg') ? fallbackPath : null
+}
+
+function resolveMacDmgUrlFromUpdateInfo(updateInfo: any): string | null {
+  const candidates = resolveMacDmgUrlCandidatesFromUpdateInfo(updateInfo)
+  return candidates[0] ?? null
+}
+
+function resolveMacDmgUrlCandidatesFromUpdateInfo(updateInfo: any): string[] {
+  const dmgAsset = resolveMacDmgAssetFromUpdateInfo(updateInfo)
+  if (!dmgAsset) return []
+  if (isAbsoluteHttpUrl(dmgAsset)) return [dmgAsset]
+
+  const cleanAsset = dmgAsset.replace(/^\/+/, '')
+  if (!cleanAsset) return []
+
+  const version = String(updateInfo?.version ?? '').trim()
+  if (!version) return []
+
+  const { owner, repo } = readGithubPublishConfig()
+  const encodedAssetPath = cleanAsset.split('/').map(encodeURIComponent).join('/')
+  const versionTag = version.startsWith('v') ? version : `v${version}`
+  const rawTag = version.startsWith('v') ? version.slice(1) : version
+
+  const candidates = [
+    `https://github.com/${owner}/${repo}/releases/download/${encodeURIComponent(versionTag)}/${encodedAssetPath}`,
+    `https://github.com/${owner}/${repo}/releases/download/${encodeURIComponent(rawTag)}/${encodedAssetPath}`,
+    `https://github.com/${owner}/${repo}/releases/latest/download/${encodedAssetPath}`
+  ]
+
+  return [...new Set(candidates)]
 }
 
 function setupUpdateHandlers(): void {
@@ -805,26 +860,37 @@ function setupUpdateHandlers(): void {
           throw new Error('Unable to resolve update info.')
         }
 
-        const dmgDownloadUrl = resolveMacDmgUrlFromUpdateInfo(currentUpdateInfo)
-        if (!dmgDownloadUrl) {
+        const dmgUrlCandidates = resolveMacDmgUrlCandidatesFromUpdateInfo(currentUpdateInfo)
+        if (dmgUrlCandidates.length === 0) {
           throw new Error('No downloadable DMG URL resolved from update metadata.')
-        }
-        if (!isAbsoluteHttpUrl(dmgDownloadUrl)) {
-          throw new Error(
-            'DMG URL is not absolute. Configure update feed to return absolute asset URLs.'
-          )
         }
 
         const version = currentUpdateInfo.version || app.getVersion()
-        const fileNameFromUrl = String(dmgDownloadUrl).split('/').pop()?.split('?')[0]
+        const fileNameFromUrl = String(dmgUrlCandidates[0]).split('/').pop()?.split('?')[0]
         const fileName = fileNameFromUrl && fileNameFromUrl.length > 0 ? fileNameFromUrl : `apppad-${version}.dmg`
         const targetPath = join(app.getPath('temp'), fileName)
         downloadedDmgPath = targetPath
 
         sendUpdateEvent('update-download-progress', { percent: 0 })
-        const response = await fetch(dmgDownloadUrl)
-        if (!response.ok) {
-          throw new Error(`Download failed: ${response.status} ${response.statusText}`)
+        let response: Response | null = null
+        let lastError = ''
+        for (const candidateUrl of dmgUrlCandidates) {
+          try {
+            const res = await fetch(candidateUrl)
+            if (!res.ok) {
+              lastError = `${res.status} ${res.statusText}`.trim()
+              continue
+            }
+            response = res
+            break
+          } catch (error) {
+            lastError = error instanceof Error ? error.message : String(error)
+          }
+        }
+        if (!response) {
+          throw new Error(
+            `Download failed for all DMG URL candidates: ${dmgUrlCandidates.join(', ')}${lastError ? ` (${lastError})` : ''}`
+          )
         }
         const arrayBuffer = await response.arrayBuffer()
         writeFileSync(targetPath, Buffer.from(arrayBuffer))
