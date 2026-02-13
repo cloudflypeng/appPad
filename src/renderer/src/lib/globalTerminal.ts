@@ -29,18 +29,20 @@ export function getGlobalTerminalEvents(): {
 
 export async function executeWithGlobalTerminal(command: string): Promise<TerminalExecResult> {
   openGlobalTerminal()
-  appendToGlobalTerminal(`$ ${command}`)
+  appendToGlobalTerminal(`> ${command}`)
 
   const result = await window.api.executeTerminalCommand(command)
 
-  if (result.stdout.trim()) {
+  if (result.stdout.length > 0) {
     appendToGlobalTerminal(result.stdout)
   }
-  if (result.stderr.trim()) {
+  if (result.stderr.length > 0) {
     appendToGlobalTerminal(result.stderr)
   }
   if (!result.success) {
     appendToGlobalTerminal(`[exit ${result.code ?? 'unknown'}] ${result.error ?? 'command failed'}`)
+  } else if (result.stdout.length === 0 && result.stderr.length === 0) {
+    appendToGlobalTerminal('[exit 0] command completed with no output')
   }
 
   return result

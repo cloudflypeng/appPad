@@ -54,10 +54,12 @@ function GlobalTerminalPanel(): React.JSX.Element {
       runningRef.current = true
       try {
         const result = await window.api.executeTerminalCommand(command)
-        if (result.stdout.trim()) term.writeln(result.stdout)
-        if (result.stderr.trim()) term.writeln(result.stderr)
+        if (result.stdout.length > 0) term.writeln(result.stdout)
+        if (result.stderr.length > 0) term.writeln(result.stderr)
         if (!result.success) {
           term.writeln(`[exit ${result.code ?? 'unknown'}] ${result.error ?? 'command failed'}`)
+        } else if (result.stdout.length === 0 && result.stderr.length === 0) {
+          term.writeln('[exit 0] command completed with no output')
         }
       } catch (error) {
         term.writeln(error instanceof Error ? error.message : 'command execution failed')

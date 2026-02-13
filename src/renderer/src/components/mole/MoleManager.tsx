@@ -231,7 +231,7 @@ function MoleManager(): React.JSX.Element {
         return {
           ...row,
           uninstallSource: 'mole',
-          uninstallCommand: `mo uninstall ${shellQuote(row.name)}`
+          uninstallCommand: `mo uninstall ${row.name}`
         }
       })
 
