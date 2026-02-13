@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowUpCircle,
   CheckCircle2,
+  Download,
   RefreshCw,
   XCircle
 } from 'lucide-react'
@@ -27,6 +28,7 @@ type MoleStatus = {
 }
 
 const DEFAULT_QUERY_COMMAND = 'mo uninstall'
+const MOLE_INSTALL_COMMAND = 'brew install mole'
 
 function toNonBlockingQueryCommand(command: string): string {
   const trimmed = command.trim()
@@ -109,6 +111,7 @@ function MoleManager(): React.JSX.Element {
   const [status, setStatus] = useState<MoleStatus | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [runningUpdate, setRunningUpdate] = useState(false)
+  const [runningInstall, setRunningInstall] = useState(false)
   const queryCommand = DEFAULT_QUERY_COMMAND
   const debugEnabled = false
   const [runningQuery, setRunningQuery] = useState(false)
@@ -183,6 +186,23 @@ function MoleManager(): React.JSX.Element {
       setError(err instanceof Error ? err.message : 'Mole update failed.')
     } finally {
       setRunningUpdate(false)
+    }
+  }
+
+  const runInstall = async (): Promise<void> => {
+    if (runningInstall) return
+    setRunningInstall(true)
+    setError(null)
+    try {
+      const result = await executeWithGlobalTerminal(MOLE_INSTALL_COMMAND)
+      if (!result.success) {
+        setError(result.error ?? 'Mole install failed.')
+      }
+      await refreshStatus()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Mole install failed.')
+    } finally {
+      setRunningInstall(false)
     }
   }
 
@@ -333,7 +353,9 @@ function MoleManager(): React.JSX.Element {
               <div>
                 <p className="text-sm font-medium">Action</p>
                 <p className="text-xs text-muted-foreground">
-                  Update Mole to the latest version.
+                  {status?.installed
+                    ? 'Update Mole to the latest version.'
+                    : 'Install Mole first, then you can update and manage apps.'}
                 </p>
               </div>
               <div className="shrink-0 flex items-center gap-2">
@@ -343,7 +365,7 @@ function MoleManager(): React.JSX.Element {
                   onClick={() => {
                     void loadStatus()
                   }}
-                  disabled={loadingStatus || runningUpdate}
+                  disabled={loadingStatus || runningUpdate || runningInstall}
                 >
                   <RefreshCw className={`h-4 w-4 ${loadingStatus ? 'animate-spin' : ''}`} />
                   Refresh Status
@@ -351,12 +373,22 @@ function MoleManager(): React.JSX.Element {
                 <Button
                   size="sm"
                   onClick={() => {
-                    void runUpdate()
+                    if (status?.installed) {
+                      void runUpdate()
+                    } else {
+                      void runInstall()
+                    }
                   }}
-                  disabled={loadingStatus || runningUpdate || !status?.installed}
+                  disabled={loadingStatus || runningUpdate || runningInstall}
                 >
-                  <ArrowUpCircle className="h-4 w-4" />
-                  {runningUpdate ? 'Updating...' : 'Update Mole'}
+                  {status?.installed ? <ArrowUpCircle className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+                  {status?.installed
+                    ? runningUpdate
+                      ? 'Updating...'
+                      : 'Update Mole'
+                    : runningInstall
+                      ? 'Installing...'
+                      : 'Install Mole'}
                 </Button>
               </div>
             </div>

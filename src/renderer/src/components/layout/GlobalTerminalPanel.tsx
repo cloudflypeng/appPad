@@ -28,6 +28,7 @@ type ActiveExecState = {
   doneMarker: string
   started: boolean
   partial: string
+  outputFilterPartial: string
   captured: string
 }
 
@@ -47,6 +48,62 @@ function getMarkerTailLength(input: string, marker: string): number {
     if (input.endsWith(marker.slice(0, len))) return len
   }
   return 0
+}
+
+function findStandaloneMarkerLine(input: string, marker: string): number {
+  let searchFrom = 0
+  while (searchFrom < input.length) {
+    const idx = input.indexOf(marker, searchFrom)
+    if (idx === -1) return -1
+    const prev = idx === 0 ? '' : input[idx - 1]
+    const next = input[idx + marker.length] ?? ''
+    const prevOk = prev === '' || prev === '\n' || prev === '\r'
+    const nextOk = next === '' || next === '\n' || next === '\r'
+    if (prevOk && nextOk) {
+      return idx
+    }
+    searchFrom = idx + marker.length
+  }
+  return -1
+}
+
+function shouldFilterExecNoiseLine(line: string, beginMarker: string, doneMarker: string): boolean {
+  const normalized = line.replace(/\r?\n$/, '')
+  if (!normalized.trim()) return false
+  if (normalized.includes('__apppad_exec_code=$?')) return true
+  if (normalized.includes("printf '%s%s%s\\n'")) return true
+  if (normalized.includes(beginMarker)) return true
+  if (normalized.includes(doneMarker)) return true
+  if (/^\s*%\s*$/.test(normalized)) return true
+  if (/^\s*~\s*'\s*$/.test(normalized)) return true
+  return false
+}
+
+function filterExecNoiseChunk(
+  chunk: string,
+  active: Pick<ActiveExecState, 'beginMarker' | 'doneMarker' | 'outputFilterPartial'>
+): {
+  visible: string
+  partial: string
+} {
+  const combined = `${active.outputFilterPartial}${chunk}`
+  let visible = ''
+  let cursor = 0
+
+  while (cursor < combined.length) {
+    const nextLf = combined.indexOf('\n', cursor)
+    if (nextLf === -1) break
+    const lineWithLf = combined.slice(cursor, nextLf + 1)
+    if (!shouldFilterExecNoiseLine(lineWithLf, active.beginMarker, active.doneMarker)) {
+      visible += lineWithLf
+    }
+    cursor = nextLf + 1
+  }
+
+  return {
+    visible,
+    partial: combined.slice(cursor)
+  }
 }
 
 function buildExecWrapper(command: string, beginMarker: string, doneMarker: string): string {
@@ -83,6 +140,9 @@ function GlobalTerminalPanel(): React.JSX.Element {
   const pendingBytesRef = useRef(0)
   const execQueueRef = useRef<ExecRequest[]>([])
   const activeExecRef = useRef<ActiveExecState | null>(null)
+  const suppressNextPromptRef = useRef(false)
+  const sessionJustStartedRef = useRef(false)
+  const userInteractedRef = useRef(false)
 
   const openPanel = (): void => {
     setExpanded(true)
@@ -225,6 +285,8 @@ function GlobalTerminalPanel(): React.JSX.Element {
           shell: toShellPath(selectedShellRef.current)
         })
         sessionIdRef.current = result.sessionId
+        sessionJustStartedRef.current = true
+        userInteractedRef.current = false
         flowPausedRef.current = false
         setSessionReady(true)
         await syncPtySize()
@@ -243,38 +305,57 @@ function GlobalTerminalPanel(): React.JSX.Element {
 
       const combined = `${active.partial}${incoming}`
       if (!active.started) {
-        const beginIndex = combined.indexOf(active.beginMarker)
+        const beginIndex = findStandaloneMarkerLine(combined, active.beginMarker)
         if (beginIndex === -1) {
-          const keepLen = getMarkerTailLength(combined, active.beginMarker)
-          active.partial = combined.slice(combined.length - keepLen)
+          const keepLen = Math.max(getMarkerTailLength(combined, active.beginMarker), active.beginMarker.length)
+          active.partial = combined.slice(Math.max(0, combined.length - keepLen))
           return ''
         }
         active.started = true
         active.partial = ''
-        const afterBegin = combined.slice(beginIndex + active.beginMarker.length)
+        const afterBeginRaw = combined.slice(beginIndex + active.beginMarker.length)
+        const afterBegin =
+          afterBeginRaw.startsWith('\r\n')
+            ? afterBeginRaw.slice(2)
+            : afterBeginRaw.startsWith('\n')
+              ? afterBeginRaw.slice(1)
+              : afterBeginRaw
         return processExecOutput(afterBegin)
       }
 
       const markerIndex = combined.indexOf(active.doneMarker)
       if (markerIndex === -1) {
         const keepLen = getMarkerTailLength(combined, active.doneMarker)
-        const visible = combined.slice(0, combined.length - keepLen)
+        const rawVisible = combined.slice(0, combined.length - keepLen)
+        const filtered = filterExecNoiseChunk(rawVisible, active)
         active.partial = combined.slice(combined.length - keepLen)
-        active.captured += visible
-        return visible
+        active.outputFilterPartial = filtered.partial
+        active.captured += filtered.visible
+        return filtered.visible
       }
 
       const afterMarker = combined.slice(markerIndex + active.doneMarker.length)
       const codeMatch = afterMarker.match(/^(-?\d+)__/)
       if (!codeMatch) {
-        const visible = combined.slice(0, markerIndex)
+        const rawVisible = combined.slice(0, markerIndex)
+        const filtered = filterExecNoiseChunk(rawVisible, active)
         active.partial = combined.slice(markerIndex)
-        active.captured += visible
-        return visible
+        active.outputFilterPartial = filtered.partial
+        active.captured += filtered.visible
+        return filtered.visible
       }
 
-      const visibleBefore = combined.slice(0, markerIndex)
-      active.captured += visibleBefore
+      const rawVisibleBefore = combined.slice(0, markerIndex)
+      const filteredBefore = filterExecNoiseChunk(rawVisibleBefore, active)
+      active.outputFilterPartial = filteredBefore.partial
+      active.captured += filteredBefore.visible
+      if (
+        active.outputFilterPartial &&
+        !shouldFilterExecNoiseLine(active.outputFilterPartial, active.beginMarker, active.doneMarker)
+      ) {
+        active.captured += active.outputFilterPartial
+      }
+      active.outputFilterPartial = ''
 
       const parsedCode = Number.parseInt(codeMatch[1] ?? '1', 10)
       const exitCode = Number.isNaN(parsedCode) ? 1 : parsedCode
@@ -301,8 +382,51 @@ function GlobalTerminalPanel(): React.JSX.Element {
         })
       }
 
+      suppressNextPromptRef.current = true
       void startNextExec()
-      return visibleBefore
+      return filteredBefore.visible
+    }
+
+    const stripPostExecPromptNoise = (output: string): string => {
+      if (!suppressNextPromptRef.current || !output) return output
+
+      if (/^(?:\r?\n)*\s*%\s*$/.test(output) || /^(?:\r?\n)*\s*~\s*'\s*$/.test(output)) {
+        suppressNextPromptRef.current = false
+        return ''
+      }
+
+      const promptWithNewline = output.match(/^(?:\r?\n)*\s*%\s*(\r?\n)/)
+      if (promptWithNewline) {
+        suppressNextPromptRef.current = false
+        return output.slice(promptWithNewline[0].length)
+      }
+
+      if (/\S/.test(output)) {
+        suppressNextPromptRef.current = false
+      }
+
+      return output
+    }
+
+    const stripInitialPromptNoise = (output: string): string => {
+      if (!output) return output
+      if (!sessionJustStartedRef.current || userInteractedRef.current) return output
+
+      const promptOnly = output.match(/^(?:\r?\n)*\s*%\s*(?:\r?\n)?$/)
+      if (promptOnly) {
+        return ''
+      }
+
+      const leadingPromptWithNewline = output.match(/^(?:\r?\n)*\s*%\s*(\r?\n)/)
+      if (leadingPromptWithNewline) {
+        sessionJustStartedRef.current = false
+        return output.slice(leadingPromptWithNewline[0].length)
+      }
+
+      if (/\S/.test(output)) {
+        sessionJustStartedRef.current = false
+      }
+      return output
     }
 
     const startNextExec = async (): Promise<void> => {
@@ -327,6 +451,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
         doneMarker,
         started: false,
         partial: '',
+        outputFilterPartial: '',
         captured: ''
       }
 
@@ -365,6 +490,10 @@ function GlobalTerminalPanel(): React.JSX.Element {
     void ensureSession()
 
     const disposeData = term.onData((data) => {
+      if (data.length > 0) {
+        userInteractedRef.current = true
+        sessionJustStartedRef.current = false
+      }
       const sessionId = sessionIdRef.current
       if (!sessionId) {
         if (data === '\r') {
@@ -386,7 +515,9 @@ function GlobalTerminalPanel(): React.JSX.Element {
 
     const unsubscribeTerminalData = window.api.onTerminalData((payload) => {
       if (payload.sessionId !== sessionIdRef.current || !termRef.current) return
-      const visibleOutput = processExecOutput(payload.data)
+      const visibleOutput = stripInitialPromptNoise(
+        stripPostExecPromptNoise(processExecOutput(payload.data))
+      )
       if (visibleOutput.length > 0) {
         enqueueOutput(visibleOutput)
       }
