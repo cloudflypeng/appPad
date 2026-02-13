@@ -8,9 +8,16 @@ const api = {
   diagnoseBrewVersion: () => ipcRenderer.invoke('brew:diagnose-version'),
   installBrew: () => ipcRenderer.invoke('brew:install'),
   updateBrew: () => ipcRenderer.invoke('brew:update'),
-  createTerminalSession: () => ipcRenderer.invoke('terminal:create') as Promise<{ sessionId: number }>,
+  createTerminalSession: (payload?: { shell?: string }) =>
+    ipcRenderer.invoke('terminal:create', payload) as Promise<{ sessionId: number }>,
   writeTerminalSession: (sessionId: number, data: string) =>
     ipcRenderer.invoke('terminal:write', { sessionId, data }) as Promise<{ success: boolean }>,
+  writeTerminalSessionBinary: (sessionId: number, dataBase64: string) =>
+    ipcRenderer.invoke('terminal:write-binary', { sessionId, dataBase64 }) as Promise<{ success: boolean }>,
+  setTerminalSessionFlowControl: (sessionId: number, paused: boolean) =>
+    ipcRenderer.invoke('terminal:set-flow-control', { sessionId, paused }) as Promise<{ success: boolean }>,
+  resizeTerminalSession: (sessionId: number, cols: number, rows: number) =>
+    ipcRenderer.invoke('terminal:resize', { sessionId, cols, rows }) as Promise<{ success: boolean }>,
   closeTerminalSession: (sessionId: number) =>
     ipcRenderer.invoke('terminal:close', { sessionId }) as Promise<{ success: boolean }>,
   executeTerminalCommand: (command: string) =>

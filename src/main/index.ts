@@ -1,10 +1,11 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import { spawn } from 'child_process'
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import Database from 'better-sqlite3'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import electronUpdater from 'electron-updater'
+import { spawn as spawnPty, type IPty } from 'node-pty'
 import icon from '../renderer/src/assets/logo.png?asset'
 
 const { autoUpdater } = electronUpdater
@@ -129,9 +130,14 @@ type CatalogCachePayload = {
   items: CatalogCacheItem[]
 }
 
+type TerminalSessionState = {
+  pty: IPty
+  flowPaused: boolean
+}
+
 const COMMON_BREW_PATHS = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']
 let nextTerminalSessionId = 1
-const terminalSessions = new Map<number, ChildProcessWithoutNullStreams>()
+const terminalSessions = new Map<number, TerminalSessionState>()
 let cacheDb: Database.Database | null = null
 let currentUpdateInfo: any = null
 let downloadedDmgPath: string | null = null
@@ -581,9 +587,17 @@ function getBaseEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
     PATH: normalizedPath,
+    TERM: process.env.TERM || 'xterm-256color',
     HOMEBREW_NO_ENV_HINTS: '1',
     NONINTERACTIVE: '1'
   }
+}
+
+function getTerminalEnv(): NodeJS.ProcessEnv {
+  const env = { ...getBaseEnv() }
+  delete env.NONINTERACTIVE
+  env.COLORTERM = env.COLORTERM || 'truecolor'
+  return env
 }
 
 function runCommand(bin: string, args: string[], timeoutMs = 1000 * 60 * 20): Promise<CommandResult> {
@@ -996,41 +1010,48 @@ rm -f "$SCRIPT_PATH"
   })
 }
 
-function createTerminalSession(): { sessionId: number } {
-  const shellPath = process.env.SHELL || '/bin/zsh'
+function normalizeTerminalShell(rawShell?: string): string {
+  const candidate = (rawShell || '').trim()
+  if (!candidate) return process.env.APPPAD_TERMINAL_SHELL || process.env.SHELL || '/bin/zsh'
+
+  const basename = candidate.split('/').pop()?.toLowerCase() || ''
+  if (basename === 'zsh') return '/bin/zsh'
+  if (basename === 'bash') return '/bin/bash'
+  if (candidate === '/bin/zsh' || candidate === '/bin/bash') return candidate
+
+  return process.env.APPPAD_TERMINAL_SHELL || process.env.SHELL || '/bin/zsh'
+}
+
+function createTerminalSession(shell?: string): { sessionId: number } {
+  const shellPath = normalizeTerminalShell(shell)
+  const shellName = shellPath.split('/').pop()?.toLowerCase() || ''
+  const shellArgs = ['zsh', 'bash', 'fish'].includes(shellName) ? ['-l'] : []
   const sessionId = nextTerminalSessionId++
-  const child = spawn(shellPath, ['-l'], {
-    env: getBaseEnv(),
+  const pty = spawnPty(shellPath, shellArgs, {
+    name: 'xterm-256color',
+    cols: 120,
+    rows: 30,
     cwd: process.env.HOME || process.cwd(),
-    stdio: 'pipe'
+    env: getTerminalEnv()
   })
 
-  terminalSessions.set(sessionId, child)
+  terminalSessions.set(sessionId, { pty, flowPaused: false })
 
-  child.stdout.on('data', (chunk: Buffer) => {
+  pty.onData((data) => {
     BrowserWindow.getAllWindows().forEach((window) => {
       window.webContents.send('terminal:data', {
         sessionId,
-        data: chunk.toString()
+        data
       })
     })
   })
 
-  child.stderr.on('data', (chunk: Buffer) => {
-    BrowserWindow.getAllWindows().forEach((window) => {
-      window.webContents.send('terminal:data', {
-        sessionId,
-        data: chunk.toString()
-      })
-    })
-  })
-
-  child.on('close', (code) => {
+  pty.onExit((event) => {
     terminalSessions.delete(sessionId)
     BrowserWindow.getAllWindows().forEach((window) => {
       window.webContents.send('terminal:exit', {
         sessionId,
-        code
+        code: event.exitCode
       })
     })
   })
@@ -1040,10 +1061,60 @@ function createTerminalSession(): { sessionId: number } {
 
 function writeTerminalSession(sessionId: number, data: string): { success: boolean } {
   const session = terminalSessions.get(sessionId)
-  if (!session || session.killed) {
+  if (!session) {
     return { success: false }
   }
-  session.stdin.write(data)
+  session.pty.write(data)
+  return { success: true }
+}
+
+function writeTerminalSessionBinary(sessionId: number, dataBase64: string): { success: boolean } {
+  const session = terminalSessions.get(sessionId)
+  if (!session) {
+    return { success: false }
+  }
+
+  try {
+    const data = Buffer.from(dataBase64, 'base64')
+    if (data.length === 0) return { success: true }
+    session.pty.write(data)
+  } catch {
+    return { success: false }
+  }
+
+  return { success: true }
+}
+
+function setTerminalSessionFlowControl(sessionId: number, paused: boolean): { success: boolean } {
+  const session = terminalSessions.get(sessionId)
+  if (!session) {
+    return { success: false }
+  }
+
+  if (paused && !session.flowPaused) {
+    session.pty.pause()
+    session.flowPaused = true
+    return { success: true }
+  }
+
+  if (!paused && session.flowPaused) {
+    session.pty.resume()
+    session.flowPaused = false
+    return { success: true }
+  }
+
+  return { success: true }
+}
+
+function resizeTerminalSession(sessionId: number, cols: number, rows: number): { success: boolean } {
+  const session = terminalSessions.get(sessionId)
+  if (!session) {
+    return { success: false }
+  }
+
+  const safeCols = Number.isFinite(cols) ? Math.max(20, Math.floor(cols)) : 120
+  const safeRows = Number.isFinite(rows) ? Math.max(5, Math.floor(rows)) : 30
+  session.pty.resize(safeCols, safeRows)
   return { success: true }
 }
 
@@ -1052,7 +1123,7 @@ function closeTerminalSession(sessionId: number): { success: boolean } {
   if (!session) {
     return { success: false }
   }
-  session.kill('SIGTERM')
+  session.pty.kill()
   terminalSessions.delete(sessionId)
   return { success: true }
 }
@@ -1577,11 +1648,20 @@ app.whenReady().then(() => {
     const refreshed = await refreshBrewStatusCache()
     return refreshed.status
   })
-  ipcMain.handle('terminal:create', async () => {
-    return createTerminalSession()
+  ipcMain.handle('terminal:create', async (_, payload?: { shell?: string }) => {
+    return createTerminalSession(payload?.shell)
   })
   ipcMain.handle('terminal:write', async (_, payload: { sessionId: number; data: string }) => {
     return writeTerminalSession(payload.sessionId, payload.data)
+  })
+  ipcMain.handle('terminal:write-binary', async (_, payload: { sessionId: number; dataBase64: string }) => {
+    return writeTerminalSessionBinary(payload.sessionId, payload.dataBase64)
+  })
+  ipcMain.handle('terminal:set-flow-control', async (_, payload: { sessionId: number; paused: boolean }) => {
+    return setTerminalSessionFlowControl(payload.sessionId, payload.paused)
+  })
+  ipcMain.handle('terminal:resize', async (_, payload: { sessionId: number; cols: number; rows: number }) => {
+    return resizeTerminalSession(payload.sessionId, payload.cols, payload.rows)
   })
   ipcMain.handle('terminal:close', async (_, payload: { sessionId: number }) => {
     return closeTerminalSession(payload.sessionId)
@@ -1707,7 +1787,7 @@ app.whenReady().then(() => {
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   terminalSessions.forEach((session) => {
-    if (!session.killed) session.kill('SIGTERM')
+    session.pty.kill()
   })
   terminalSessions.clear()
   if (process.platform !== 'darwin') {
