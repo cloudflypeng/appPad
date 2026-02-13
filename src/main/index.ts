@@ -826,6 +826,16 @@ function resolveMacDmgUrlCandidatesFromUpdateInfo(updateInfo: any): string[] {
 
 function setupUpdateHandlers(): void {
   ipcMain.handle('check-for-updates', async () => {
+    if (!app.isPackaged) {
+      return {
+        success: true,
+        updateAvailable: false,
+        currentVersion: `v${app.getVersion()}`,
+        latestVersion: `v${app.getVersion()}`,
+        releaseNotes: 'Update checks are disabled in development mode.'
+      }
+    }
+
     try {
       const result = await autoUpdater.checkForUpdates()
       if (!result) {
@@ -863,6 +873,13 @@ function setupUpdateHandlers(): void {
   })
 
   ipcMain.handle('download-and-install-update', async () => {
+    if (!app.isPackaged) {
+      return {
+        success: false,
+        error: 'Update download/install is disabled in development mode.'
+      }
+    }
+
     if (process.platform === 'darwin') {
       try {
         if (!currentUpdateInfo) {
@@ -932,6 +949,12 @@ function setupUpdateHandlers(): void {
   })
 
   ipcMain.handle('quit-and-install', () => {
+    if (!app.isPackaged) {
+      return {
+        success: false
+      }
+    }
+
     if (process.platform === 'darwin' && downloadedDmgPath) {
       const currentAppPath = app.getPath('exe').replace(/\.app\/Contents\/MacOS\/.*$/, '.app')
       const installScriptPath = join(app.getPath('temp'), 'apppad-install-update.sh')

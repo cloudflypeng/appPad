@@ -31,7 +31,8 @@ function main() {
   if (!currentRelative) return
 
   const currentAbsolute = path.join(distDir, currentRelative)
-  if (fs.existsSync(currentAbsolute)) return
+  const currentBasename = path.basename(currentRelative)
+  if (fs.existsSync(currentAbsolute) && currentBasename === 'Electron') return
 
   if (process.platform !== 'darwin') return
 
@@ -47,8 +48,15 @@ function main() {
     }
   })
   if (candidates.length === 0) return
+  if (!candidates.includes('Electron')) {
+    console.error(
+      '[ensure-electron-path] Electron binary is missing. Refusing to point path.txt to a non-Electron executable.'
+    )
+    process.exitCode = 1
+    return
+  }
 
-  const executable = candidates.includes('Electron') ? 'Electron' : candidates[0]
+  const executable = 'Electron'
   const repairedRelative = path.join(appBundle, 'Contents', 'MacOS', executable)
   fs.writeFileSync(pathFile, repairedRelative)
   console.warn(`[ensure-electron-path] repaired path.txt -> ${repairedRelative}`)
