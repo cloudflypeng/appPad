@@ -7,6 +7,7 @@ export type CatalogSeed = {
   iconKey?: string | null
   installCommand?: string
   uninstallCommand?: string
+  updateCommand?: string
 }
 
 export type CatalogItem = {
@@ -21,6 +22,7 @@ export type CatalogItem = {
   iconKey: string | null
   installCommand?: string
   uninstallCommand?: string
+  updateCommand?: string
 }
 
 export function formatNameFromToken(token: string): string {
@@ -59,7 +61,8 @@ export function buildFallbackItems(seeds: CatalogSeed[]): CatalogItem[] {
     installed: false,
     iconKey: seed.iconKey ?? null,
     installCommand: seed.installCommand,
-    uninstallCommand: seed.uninstallCommand
+    uninstallCommand: seed.uninstallCommand,
+    updateCommand: seed.updateCommand
   }))
 }
 
@@ -80,7 +83,8 @@ export function normalizeCachedItems(cachedItems: CatalogItem[], seeds: CatalogS
         installed: false,
         iconKey: seed.iconKey ?? null,
         installCommand: seed.installCommand,
-        uninstallCommand: seed.uninstallCommand
+        uninstallCommand: seed.uninstallCommand,
+        updateCommand: seed.updateCommand
       }
     }
     return {
@@ -90,7 +94,8 @@ export function normalizeCachedItems(cachedItems: CatalogItem[], seeds: CatalogS
       description: cached.description || seed.description || defaultDescriptionFromToken(seed.token),
       iconKey: cached.iconKey ?? seed.iconKey ?? null,
       installCommand: cached.installCommand ?? seed.installCommand,
-      uninstallCommand: cached.uninstallCommand ?? seed.uninstallCommand
+      uninstallCommand: cached.uninstallCommand ?? seed.uninstallCommand,
+      updateCommand: cached.updateCommand ?? seed.updateCommand
     }
   })
 }

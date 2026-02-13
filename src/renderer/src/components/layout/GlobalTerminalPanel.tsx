@@ -10,7 +10,8 @@ import { getGlobalTerminalEvents, type TerminalExecResult } from '@/lib/globalTe
 
 const OUTPUT_PAUSE_WATERMARK = 512 * 1024
 const OUTPUT_RESUME_WATERMARK = 128 * 1024
-const EXEC_MARKER_PREFIX = '__APPPAD_EXEC_DONE__'
+const EXEC_BEGIN_MARKER_PREFIX = '__APPPAD_EXEC_BEGIN__'
+const EXEC_DONE_MARKER_PREFIX = '__APPPAD_EXEC_DONE__'
 const TERMINAL_EVENTS = getGlobalTerminalEvents()
 const TERMINAL_SHELL_STORAGE_KEY = 'appPad.terminal.shell'
 
@@ -23,7 +24,9 @@ type ExecRequest = {
 
 type ActiveExecState = {
   requestId: string
-  marker: string
+  beginMarker: string
+  doneMarker: string
+  started: boolean
   partial: string
   captured: string
 }
@@ -46,9 +49,9 @@ function getMarkerTailLength(input: string, marker: string): number {
   return 0
 }
 
-function buildExecWrapper(command: string, marker: string): string {
+function buildExecWrapper(command: string, beginMarker: string, doneMarker: string): string {
   const normalizedCommand = command.endsWith('\n') ? command : `${command}\n`
-  return `${normalizedCommand}__apppad_exec_code=$?\nprintf '%s%s%s\\n' '${marker}' "$__apppad_exec_code" '__'\n`
+  return `printf '%s\\n' '${beginMarker}'\n${normalizedCommand}__apppad_exec_code=$?\nprintf '%s%s%s\\n' '${doneMarker}' "$__apppad_exec_code" '__'\n`
 }
 
 function getInitialTerminalShell(): TerminalShellChoice {
@@ -239,16 +242,29 @@ function GlobalTerminalPanel(): React.JSX.Element {
       if (!active) return incoming
 
       const combined = `${active.partial}${incoming}`
-      const markerIndex = combined.indexOf(active.marker)
+      if (!active.started) {
+        const beginIndex = combined.indexOf(active.beginMarker)
+        if (beginIndex === -1) {
+          const keepLen = getMarkerTailLength(combined, active.beginMarker)
+          active.partial = combined.slice(combined.length - keepLen)
+          return ''
+        }
+        active.started = true
+        active.partial = ''
+        const afterBegin = combined.slice(beginIndex + active.beginMarker.length)
+        return processExecOutput(afterBegin)
+      }
+
+      const markerIndex = combined.indexOf(active.doneMarker)
       if (markerIndex === -1) {
-        const keepLen = getMarkerTailLength(combined, active.marker)
+        const keepLen = getMarkerTailLength(combined, active.doneMarker)
         const visible = combined.slice(0, combined.length - keepLen)
         active.partial = combined.slice(combined.length - keepLen)
         active.captured += visible
         return visible
       }
 
-      const afterMarker = combined.slice(markerIndex + active.marker.length)
+      const afterMarker = combined.slice(markerIndex + active.doneMarker.length)
       const codeMatch = afterMarker.match(/^(-?\d+)__/)
       if (!codeMatch) {
         const visible = combined.slice(0, markerIndex)
@@ -257,9 +273,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
         return visible
       }
 
-      const markerEndIndex = markerIndex + active.marker.length + codeMatch[0].length
       const visibleBefore = combined.slice(0, markerIndex)
-      const visibleAfter = combined.slice(markerEndIndex)
       active.captured += visibleBefore
 
       const parsedCode = Number.parseInt(codeMatch[1] ?? '1', 10)
@@ -288,7 +302,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
       }
 
       void startNextExec()
-      return `${visibleBefore}${visibleAfter}`
+      return visibleBefore
     }
 
     const startNextExec = async (): Promise<void> => {
@@ -305,15 +319,18 @@ function GlobalTerminalPanel(): React.JSX.Element {
       const next = execQueueRef.current.shift()
       if (!next) return
 
-      const marker = `${EXEC_MARKER_PREFIX}${next.requestId}_`
+      const beginMarker = `${EXEC_BEGIN_MARKER_PREFIX}${next.requestId}__`
+      const doneMarker = `${EXEC_DONE_MARKER_PREFIX}${next.requestId}_`
       activeExecRef.current = {
         requestId: next.requestId,
-        marker,
+        beginMarker,
+        doneMarker,
+        started: false,
         partial: '',
         captured: ''
       }
 
-      const wrapper = buildExecWrapper(next.command, marker)
+      const wrapper = buildExecWrapper(next.command, beginMarker, doneMarker)
       const writeResult = await window.api.writeTerminalSession(sessionId, wrapper)
       if (!writeResult.success) {
         activeExecRef.current = null

@@ -56,7 +56,10 @@ function CatalogTab({
   const [brewInstalled, setBrewInstalled] = useState<boolean | null>(null)
   const [items, setItems] = useState<CatalogItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [runningToken, setRunningToken] = useState<string | null>(null)
+  const [runningAction, setRunningAction] = useState<{
+    token: string
+    action: 'install' | 'uninstall' | 'update'
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const normalizedSeeds = useMemo(
@@ -182,7 +185,8 @@ function CatalogTab({
                 installed: true,
                 iconKey: null,
                 installCommand: `brew install --cask ${token}`,
-                uninstallCommand: `brew uninstall --cask ${token}`
+                uninstallCommand: `brew uninstall --cask ${token}`,
+                updateCommand: `brew upgrade --cask ${token}`
               }
             }),
             ...installedFormulaTokens.map((token) => {
@@ -199,7 +203,8 @@ function CatalogTab({
                 installed: true,
                 iconKey: null,
                 installCommand: `brew install ${token}`,
-                uninstallCommand: `brew uninstall ${token}`
+                uninstallCommand: `brew uninstall ${token}`,
+                updateCommand: `brew upgrade ${token}`
               }
             })
           ].sort((a, b) => a.name.localeCompare(b.name))
@@ -248,7 +253,12 @@ function CatalogTab({
                 seed.uninstallCommand ??
                 (brewType === 'cask'
                   ? `brew uninstall --cask ${seed.token}`
-                  : `brew uninstall ${seed.token}`)
+                  : `brew uninstall ${seed.token}`),
+              updateCommand:
+                seed.updateCommand ??
+                (brewType === 'cask'
+                  ? `brew upgrade --cask ${seed.token}`
+                  : `brew upgrade ${seed.token}`)
             }
           })
 
@@ -266,11 +276,12 @@ function CatalogTab({
   }
 
   const toggleInstall = async (item: CatalogItem): Promise<void> => {
-    setRunningToken(item.token)
+    const action: 'install' | 'uninstall' = item.installed ? 'uninstall' : 'install'
+    setRunningAction({ token: item.token, action })
     setError(null)
 
     try {
-      const command = item.installed
+      const command = action === 'uninstall'
         ? (item.uninstallCommand ?? `brew uninstall ${item.token}`)
         : (item.installCommand ?? `brew install ${item.token}`)
       const result = await executeWithGlobalTerminal(command)
@@ -278,7 +289,7 @@ function CatalogTab({
         setError(
           result.error ||
             result.stderr ||
-            `${item.installed ? 'Uninstall' : 'Install'} failed for ${item.token}.`
+            `${action === 'uninstall' ? 'Uninstall' : 'Install'} failed for ${item.token}.`
         )
       }
       await window.api.syncInstalledAppsCache()
@@ -287,10 +298,31 @@ function CatalogTab({
       setError(
         err instanceof Error
           ? err.message
-          : `${item.installed ? 'Uninstall' : 'Install'} failed for ${item.token}.`
+          : `${action === 'uninstall' ? 'Uninstall' : 'Install'} failed for ${item.token}.`
       )
     } finally {
-      setRunningToken(null)
+      setRunningAction(null)
+    }
+  }
+
+  const updateItem = async (item: CatalogItem): Promise<void> => {
+    setRunningAction({ token: item.token, action: 'update' })
+    setError(null)
+
+    try {
+      const command =
+        item.updateCommand ??
+        (item.brewType === 'cask' ? `brew upgrade --cask ${item.token}` : `brew upgrade ${item.token}`)
+      const result = await executeWithGlobalTerminal(command)
+      if (!result.success) {
+        setError(result.error || result.stderr || `Update failed for ${item.token}.`)
+      }
+      await window.api.syncInstalledAppsCache()
+      await loadCatalog()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Update failed for ${item.token}.`)
+    } finally {
+      setRunningAction(null)
     }
   }
 
@@ -348,10 +380,17 @@ function CatalogTab({
                       <CatalogItemRow
                         key={`${item.brewType ?? 'item'}:${item.token}`}
                         item={item}
-                        disabled={brewInstalled !== true || runningToken !== null}
-                        running={runningToken === item.token}
+                        disabled={brewInstalled !== true || runningAction !== null}
+                        running={
+                          runningAction?.token === item.token &&
+                          (runningAction.action === 'install' || runningAction.action === 'uninstall')
+                        }
+                        updating={runningAction?.token === item.token && runningAction.action === 'update'}
                         onToggle={(next) => {
                           void toggleInstall(next)
+                        }}
+                        onUpdate={(next) => {
+                          void updateItem(next)
                         }}
                       />
                     ))}
@@ -373,10 +412,17 @@ function CatalogTab({
                       <CatalogItemRow
                         key={`${item.brewType ?? 'item'}:${item.token}`}
                         item={item}
-                        disabled={brewInstalled !== true || runningToken !== null}
-                        running={runningToken === item.token}
+                        disabled={brewInstalled !== true || runningAction !== null}
+                        running={
+                          runningAction?.token === item.token &&
+                          (runningAction.action === 'install' || runningAction.action === 'uninstall')
+                        }
+                        updating={runningAction?.token === item.token && runningAction.action === 'update'}
                         onToggle={(next) => {
                           void toggleInstall(next)
+                        }}
+                        onUpdate={(next) => {
+                          void updateItem(next)
                         }}
                       />
                     ))}
@@ -390,8 +436,12 @@ function CatalogTab({
                 <CatalogItemRow
                   key={`${item.brewType ?? 'item'}:${item.token}`}
                   item={item}
-                  disabled={brewInstalled !== true || runningToken !== null}
-                  running={runningToken === item.token}
+                  disabled={brewInstalled !== true || runningAction !== null}
+                  running={
+                    runningAction?.token === item.token &&
+                    (runningAction.action === 'install' || runningAction.action === 'uninstall')
+                  }
+                  updating={runningAction?.token === item.token && runningAction.action === 'update'}
                   onToggle={(next) => {
                     void toggleInstall(next)
                   }}

@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { spawn } from 'child_process'
-import { chmodSync, createWriteStream, existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
+import { chmodSync, createWriteStream, existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs'
 import Database from 'better-sqlite3'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import electronUpdater from 'electron-updater'
@@ -1356,6 +1356,89 @@ async function getBrewStatus(): Promise<BrewStatus> {
   }
 }
 
+async function forceCleanBrewCaskResidue(tokenInput: string): Promise<{
+  success: boolean
+  message?: string
+  error?: string
+  removedPaths?: string[]
+}> {
+  const token = tokenInput.trim()
+  if (!token) {
+    return { success: false, error: 'Please provide a cask token.' }
+  }
+
+  if (!/^[a-z0-9][a-z0-9+_.-]*$/i.test(token)) {
+    return { success: false, error: 'Invalid cask token format.' }
+  }
+
+  const brewPath = await resolveBrewPath()
+  if (!brewPath) {
+    return { success: false, error: 'Homebrew is not installed.' }
+  }
+
+  const [listResult, infoResult] = await Promise.all([
+    runCommand(brewPath, ['list', '--cask']),
+    runCommand(brewPath, ['info', '--cask', token])
+  ])
+
+  const listedTokens = listResult.success
+    ? listResult.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+    : []
+  const isListed = listedTokens.includes(token)
+  const infoText = `${infoResult.stdout}\n${infoResult.stderr}`
+  const notInstalled = /not installed/i.test(infoText)
+
+  const residueCandidates = ['/opt/homebrew/Caskroom', '/usr/local/Caskroom']
+    .map((baseDir) => join(baseDir, token))
+    .filter((path) => existsSync(path))
+
+  const removedPaths: string[] = []
+  for (const residuePath of residueCandidates) {
+    try {
+      rmSync(residuePath, { recursive: true, force: true })
+      removedPaths.push(residuePath)
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to remove ${residuePath}: ${error instanceof Error ? error.message : String(error)}`
+      }
+    }
+  }
+
+  const listedAfterCleanupResult = await runCommand(brewPath, ['list', '--cask'])
+  const stillListed = listedAfterCleanupResult.success
+    ? listedAfterCleanupResult.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .includes(token)
+    : false
+
+  if (stillListed && removedPaths.length === 0) {
+    return {
+      success: false,
+      error: `No residue directory found for "${token}", but Homebrew still lists it.`
+    }
+  }
+
+  const summary = [
+    `token=${token}`,
+    `listedBefore=${isListed}`,
+    `notInstalled=${notInstalled}`,
+    `removed=${removedPaths.length}`,
+    `listedAfter=${stillListed}`
+  ].join(', ')
+
+  return {
+    success: true,
+    removedPaths,
+    message: `Force cleanup completed (${summary}).`
+  }
+}
+
 function getCachedBrewStatus(): CachedStatusPayload<BrewStatus> {
   return getJsonCacheValue<BrewStatus>('status_brew')
 }
@@ -1847,6 +1930,12 @@ app.whenReady().then(() => {
       ...result,
       status
     }
+  })
+  ipcMain.handle('brew:force-clean-cask', async (_, payload: { token: string }) => {
+    const result = await forceCleanBrewCaskResidue(payload.token)
+    await syncInstalledAppsCache()
+    await refreshBrewStatusCache()
+    return result
   })
 
   createWindow()

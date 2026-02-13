@@ -1,5 +1,5 @@
 import { type ComponentType } from 'react'
-import { Download, Globe } from 'lucide-react'
+import { Download, Globe, RefreshCw } from 'lucide-react'
 import {
   SiArc,
   SiArcHex,
@@ -54,14 +54,18 @@ type CatalogItemRowProps = {
   item: CatalogItem
   disabled?: boolean
   running?: boolean
+  updating?: boolean
   onToggle: (item: CatalogItem) => void
+  onUpdate?: (item: CatalogItem) => void
 }
 
 function CatalogItemRow({
   item,
   disabled = false,
   running = false,
-  onToggle
+  updating = false,
+  onToggle,
+  onUpdate
 }: CatalogItemRowProps): React.JSX.Element {
   const icon = item.iconKey ? ICON_MAP[item.iconKey] : undefined
 
@@ -99,21 +103,37 @@ function CatalogItemRow({
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
           <p className="mt-2 font-mono text-xs text-muted-foreground">
-            {item.installCommand ?? `brew install --cask ${item.token}`}
+            {item.installed
+              ? (item.updateCommand ??
+                (item.brewType === 'cask'
+                  ? `brew upgrade --cask ${item.token}`
+                  : `brew upgrade ${item.token}`))
+              : (item.installCommand ??
+                (item.brewType === 'cask'
+                  ? `brew install --cask ${item.token}`
+                  : `brew install ${item.token}`))}
           </p>
         </div>
       </div>
 
-      <Button size="sm" onClick={() => onToggle(item)} disabled={disabled}>
-        <Download className="mr-2 h-4 w-4" />
-        {running
-          ? item.installed
-            ? 'Uninstalling...'
-            : 'Installing...'
-          : item.installed
-            ? 'Uninstall'
-            : 'Install'}
-      </Button>
+      <div className="flex items-center gap-2">
+        {item.installed && onUpdate ? (
+          <Button size="sm" variant="secondary" onClick={() => onUpdate(item)} disabled={disabled}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            {updating ? 'Updating...' : 'Update'}
+          </Button>
+        ) : null}
+        <Button size="sm" onClick={() => onToggle(item)} disabled={disabled}>
+          <Download className="mr-2 h-4 w-4" />
+          {running
+            ? item.installed
+              ? 'Uninstalling...'
+              : 'Installing...'
+            : item.installed
+              ? 'Uninstall'
+              : 'Install'}
+        </Button>
+      </div>
     </div>
   )
 }

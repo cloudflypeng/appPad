@@ -88,6 +88,12 @@ type AppAPI = {
   diagnoseBrewVersion: () => Promise<BrewDiagnoseResult>
   installBrew: () => Promise<BrewActionResult>
   updateBrew: () => Promise<BrewActionResult>
+  forceCleanBrewCask: (token: string) => Promise<{
+    success: boolean
+    message?: string
+    error?: string
+    removedPaths?: string[]
+  }>
   createTerminalSession: (payload?: { shell?: string }) => Promise<{ sessionId: number }>
   writeTerminalSession: (sessionId: number, data: string) => Promise<{ success: boolean }>
   writeTerminalSessionBinary: (sessionId: number, dataBase64: string) => Promise<{ success: boolean }>

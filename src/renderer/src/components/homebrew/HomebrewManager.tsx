@@ -4,6 +4,7 @@ import { AlertCircle, ArrowUpCircle, CheckCircle2, Package, Rocket, XCircle } fr
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   appendToGlobalTerminal,
@@ -25,6 +26,9 @@ function HomebrewManager(): React.JSX.Element {
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [runningAction, setRunningAction] = useState<'install' | 'update' | 'upgradeAll' | null>(null)
   const [runningTerminalCommand, setRunningTerminalCommand] = useState(false)
+  const [cleanupToken, setCleanupToken] = useState('applite')
+  const [runningCleanup, setRunningCleanup] = useState(false)
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const installLabel = useMemo(() => {
@@ -164,6 +168,32 @@ function HomebrewManager(): React.JSX.Element {
     }
   }
 
+  const runForceCleanup = async (): Promise<void> => {
+    const token = cleanupToken.trim()
+    if (!token) {
+      setError('Please input a cask token.')
+      return
+    }
+
+    setRunningCleanup(true)
+    setError(null)
+    setCleanupMessage(null)
+    try {
+      const result = await window.api.forceCleanBrewCask(token)
+      if (!result.success) {
+        setError(result.error ?? 'Failed to force clean cask residue.')
+      } else {
+        setCleanupMessage(result.message ?? `Force cleanup completed for ${token}.`)
+      }
+      await window.api.syncInstalledAppsCache()
+      await refreshStatus()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to force clean cask residue.')
+    } finally {
+      setRunningCleanup(false)
+    }
+  }
+
   useEffect(() => {
     void loadStatus()
   }, [])
@@ -286,8 +316,48 @@ function HomebrewManager(): React.JSX.Element {
                 )}
               </div>
             </div>
+
+            <div className="flex items-center justify-between gap-3 border-t bg-background px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Force Clean Residue</p>
+                <p className="text-xs text-muted-foreground">
+                  Remove stale Homebrew caskroom metadata when a cask appears installed but is actually removed.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Input
+                  value={cleanupToken}
+                  onChange={(event) => setCleanupToken(event.target.value)}
+                  placeholder="cask token (e.g. applite)"
+                  className="h-8 w-52"
+                  disabled={runningCleanup || loadingStatus || runningAction !== null || runningTerminalCommand}
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    void runForceCleanup()
+                  }}
+                  disabled={
+                    runningCleanup ||
+                    loadingStatus ||
+                    runningAction !== null ||
+                    runningTerminalCommand ||
+                    cleanupToken.trim().length === 0
+                  }
+                >
+                  {runningCleanup ? 'Cleaning...' : 'Force Clean'}
+                </Button>
+              </div>
+            </div>
           </div>
         )}
+
+        {cleanupMessage ? (
+          <Alert>
+            <AlertDescription>{cleanupMessage}</AlertDescription>
+          </Alert>
+        ) : null}
 
         {error ? (
           <Alert variant="destructive">

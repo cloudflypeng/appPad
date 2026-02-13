@@ -8,6 +8,13 @@ const api = {
   diagnoseBrewVersion: () => ipcRenderer.invoke('brew:diagnose-version'),
   installBrew: () => ipcRenderer.invoke('brew:install'),
   updateBrew: () => ipcRenderer.invoke('brew:update'),
+  forceCleanBrewCask: (token: string) =>
+    ipcRenderer.invoke('brew:force-clean-cask', { token }) as Promise<{
+      success: boolean
+      message?: string
+      error?: string
+      removedPaths?: string[]
+    }>,
   createTerminalSession: (payload?: { shell?: string }) =>
     ipcRenderer.invoke('terminal:create', payload) as Promise<{ sessionId: number }>,
   writeTerminalSession: (sessionId: number, data: string) =>
