@@ -72,51 +72,72 @@ function HomebrewManager(): React.JSX.Element {
     return execute(command)
   }
 
+  const applyStatus = async (nextStatus: BrewStatus, enableDiagnose: boolean): Promise<void> => {
+    setStatus(nextStatus)
+
+    if (
+      nextStatus.installed &&
+      (nextStatus.installedAppCount === null || nextStatus.installedAppCount === undefined)
+    ) {
+      try {
+        const caskCountResult = await executeCommandSilently('brew list --cask 2>/dev/null | wc -l')
+        const caskCount = Number.parseInt(caskCountResult.stdout.trim(), 10)
+        const safeCaskCount = Number.isFinite(caskCount) ? caskCount : 0
+        setStatus((prev) => (prev ? { ...prev, installedAppCount: safeCaskCount } : prev))
+      } catch {
+        // keep N/A if fallback commands fail
+      }
+    }
+
+    if (enableDiagnose && nextStatus.installed && !nextStatus.currentVersion && !nextStatus.latestVersion) {
+      const diagnose = (
+        window.api as typeof window.api & { diagnoseBrewVersion?: () => Promise<any> }
+      ).diagnoseBrewVersion
+      if (diagnose) {
+        const diag = await diagnose()
+        openGlobalTerminal()
+        appendToGlobalTerminal('[diagnose] brew path')
+        appendToGlobalTerminal(String(diag.brewPath))
+        appendToGlobalTerminal('[diagnose] brew --version stdout')
+        appendToGlobalTerminal(diag.version.stdout || '<empty>')
+        appendToGlobalTerminal('[diagnose] brew --version stderr')
+        appendToGlobalTerminal(diag.version.stderr || '<empty>')
+        appendToGlobalTerminal('[diagnose] brew info --json=v2 brew stdout')
+        appendToGlobalTerminal(diag.infoJson.stdout || '<empty>')
+        appendToGlobalTerminal('[diagnose] brew info --json=v2 brew stderr')
+        appendToGlobalTerminal(diag.infoJson.stderr || '<empty>')
+      }
+    }
+  }
+
+  const refreshStatus = async (showLoading = false): Promise<void> => {
+    if (showLoading) setLoadingStatus(true)
+    try {
+      const refreshed = await window.api.refreshBrewStatusCache()
+      if (refreshed.status) {
+        await applyStatus(refreshed.status, true)
+      }
+    } finally {
+      if (showLoading) setLoadingStatus(false)
+    }
+  }
+
   const loadStatus = async (): Promise<void> => {
     setLoadingStatus(true)
     setError(null)
     try {
-      const nextStatus = await window.api.getBrewStatus()
-      setStatus(nextStatus)
-
-      if (
-        nextStatus.installed &&
-        (nextStatus.installedAppCount === null || nextStatus.installedAppCount === undefined)
-      ) {
-        try {
-          const caskCountResult = await executeCommandSilently(
-            'brew list --cask 2>/dev/null | wc -l'
-          )
-          const caskCount = Number.parseInt(caskCountResult.stdout.trim(), 10)
-          const safeCaskCount = Number.isFinite(caskCount) ? caskCount : 0
-          setStatus((prev) => (prev ? { ...prev, installedAppCount: safeCaskCount } : prev))
-        } catch {
-          // keep N/A if fallback commands fail
-        }
+      const cached = await window.api.getCachedBrewStatus()
+      if (cached.status) {
+        await applyStatus(cached.status, false)
+        setLoadingStatus(false)
       }
 
-      if (nextStatus.installed && !nextStatus.currentVersion && !nextStatus.latestVersion) {
-        const diagnose = (
-          window.api as typeof window.api & { diagnoseBrewVersion?: () => Promise<any> }
-        ).diagnoseBrewVersion
-        if (diagnose) {
-          const diag = await diagnose()
-          openGlobalTerminal()
-          appendToGlobalTerminal('[diagnose] brew path')
-          appendToGlobalTerminal(String(diag.brewPath))
-          appendToGlobalTerminal('[diagnose] brew --version stdout')
-          appendToGlobalTerminal(diag.version.stdout || '<empty>')
-          appendToGlobalTerminal('[diagnose] brew --version stderr')
-          appendToGlobalTerminal(diag.version.stderr || '<empty>')
-          appendToGlobalTerminal('[diagnose] brew info --json=v2 brew stdout')
-          appendToGlobalTerminal(diag.infoJson.stdout || '<empty>')
-          appendToGlobalTerminal('[diagnose] brew info --json=v2 brew stderr')
-          appendToGlobalTerminal(diag.infoJson.stderr || '<empty>')
-        }
-      }
+      void refreshStatus(!cached.status).catch((err) => {
+        setError(err instanceof Error ? err.message : 'Failed to refresh Homebrew status.')
+        setLoadingStatus(false)
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to read Homebrew status.')
-    } finally {
       setLoadingStatus(false)
     }
   }
@@ -134,7 +155,7 @@ function HomebrewManager(): React.JSX.Element {
       setRunningTerminalCommand(true)
       await executeWithGlobalTerminal(command)
       await window.api.syncInstalledAppsCache()
-      await loadStatus()
+      await refreshStatus()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed to execute.')
     } finally {
@@ -149,7 +170,7 @@ function HomebrewManager(): React.JSX.Element {
 
   useEffect(() => {
     const handler = (): void => {
-      void loadStatus()
+      void refreshStatus()
     }
     window.addEventListener(APP_TOPBAR_REFRESH_EVENT, handler as EventListener)
     return () => {

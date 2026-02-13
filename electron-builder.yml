@@ -1,5 +1,6 @@
 appId: com.electron.app
 productName: apppad
+icon: src/renderer/src/assets/logo.png
 directories:
   buildResources: build
 files:
@@ -13,12 +14,14 @@ asarUnpack:
   - resources/**
 win:
   executableName: apppad
+  icon: src/renderer/src/assets/logo.png
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  icon: src/renderer/src/assets/logo.png
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
@@ -29,6 +32,7 @@ mac:
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
+  icon: src/renderer/src/assets/logo.png
   target:
     - AppImage
     - snap

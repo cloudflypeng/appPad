@@ -18,6 +18,10 @@ function GlobalTerminalPanel(): React.JSX.Element {
   const fitRef = useRef<FitAddon | null>(null)
   const inputRef = useRef('')
   const runningRef = useRef(false)
+  const openPanel = (): void => {
+    setExpanded(true)
+    setTimeout(() => fitRef.current?.fit(), 220)
+  }
 
   useEffect(() => {
     if (!containerRef.current || termRef.current) return
@@ -111,8 +115,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
     }
 
     const openHandler = (): void => {
-      setExpanded(true)
-      setTimeout(() => fitRef.current?.fit(), 220)
+      openPanel()
     }
 
     window.addEventListener(events.appendEvent, appendHandler as EventListener)
@@ -132,35 +135,47 @@ function GlobalTerminalPanel(): React.JSX.Element {
   }, [])
 
   return (
-    <aside
-      className={`fixed bottom-4 right-4 z-50 w-[min(560px,calc(100vw-2rem))] transition-transform duration-300 ease-out ${
-        expanded ? 'translate-x-0' : 'translate-x-[calc(100%+2rem)]'
-      }`}
-    >
-      <div className="overflow-hidden rounded-xl border bg-[#0b1020] shadow-2xl">
-        <div className="flex h-10 items-center justify-between border-b border-white/10 px-3 text-white/90">
-          <div className="flex items-center gap-2 text-sm">
-            <TerminalSquare className="h-4 w-4" />
-            <span>{running ? 'Running command...' : 'Terminal'}</span>
+    <>
+      {!expanded ? (
+        <Button
+          size="icon"
+          className="fixed bottom-4 right-4 z-50 h-10 w-10 rounded-full shadow-lg"
+          onClick={openPanel}
+          title="Open terminal"
+        >
+          <TerminalSquare className="h-4 w-4" />
+        </Button>
+      ) : null}
+      <aside
+        className={`fixed bottom-4 right-4 z-50 w-[min(560px,calc(100vw-2rem))] transition-transform duration-300 ease-out ${
+          expanded ? 'translate-x-0' : 'translate-x-[calc(100%+2rem)]'
+        }`}
+      >
+        <div className="overflow-hidden rounded-xl border bg-[#0b1020] shadow-2xl">
+          <div className="flex h-10 items-center justify-between border-b border-white/10 px-3 text-white/90">
+            <div className="flex items-center gap-2 text-sm">
+              <TerminalSquare className="h-4 w-4" />
+              <span>{running ? 'Running command...' : 'Terminal'}</span>
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-white/80 hover:bg-white/10 hover:text-white"
+              onClick={() => setExpanded(false)}
+            >
+              <Minimize2 className="h-4 w-4" />
+            </Button>
           </div>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 text-white/80 hover:bg-white/10 hover:text-white"
-            onClick={() => setExpanded(false)}
-          >
-            <Minimize2 className="h-4 w-4" />
-          </Button>
+          <div className="p-2">
+            <div
+              ref={containerRef}
+              className="h-72 w-full overflow-hidden"
+              onClick={() => termRef.current?.focus()}
+            />
+          </div>
         </div>
-        <div className="p-2">
-          <div
-            ref={containerRef}
-            className="h-72 w-full overflow-hidden"
-            onClick={() => termRef.current?.focus()}
-          />
-        </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   )
 }
 

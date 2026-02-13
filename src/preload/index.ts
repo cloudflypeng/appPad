@@ -98,6 +98,54 @@ const api = {
       count: number
       error?: string
     }>,
+  getSearchIconCache: (tokens: string[]) =>
+    ipcRenderer.invoke('cache:get-search-icon-cache', { tokens }) as Promise<{
+      items: Array<{
+        token: string
+        iconUrl: string | null
+        fallbackIconUrl: string | null
+      }>
+    }>,
+  upsertSearchIconCache: (items: Array<{ token: string; iconUrl: string | null; fallbackIconUrl: string | null }>) =>
+    ipcRenderer.invoke('cache:upsert-search-icon-cache', { items }) as Promise<{ success: true }>,
+  getCachedBrewStatus: () =>
+    ipcRenderer.invoke('cache:get-brew-status') as Promise<{
+      status: {
+        installed: boolean
+        currentVersion: string | null
+        latestVersion: string | null
+        installedAppCount: number | null
+      } | null
+      updatedAt: number | null
+    }>,
+  refreshBrewStatusCache: () =>
+    ipcRenderer.invoke('cache:refresh-brew-status') as Promise<{
+      status: {
+        installed: boolean
+        currentVersion: string | null
+        latestVersion: string | null
+        installedAppCount: number | null
+      } | null
+      updatedAt: number | null
+    }>,
+  getCachedMoleStatus: () =>
+    ipcRenderer.invoke('cache:get-mole-status') as Promise<{
+      status: {
+        installed: boolean
+        currentVersion: string | null
+        installMethod: string | null
+      } | null
+      updatedAt: number | null
+    }>,
+  refreshMoleStatusCache: () =>
+    ipcRenderer.invoke('cache:refresh-mole-status') as Promise<{
+      status: {
+        installed: boolean
+        currentVersion: string | null
+        installMethod: string | null
+      } | null
+      updatedAt: number | null
+    }>,
   onTerminalData: (callback: (payload: { sessionId: number; data: string }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: { sessionId: number; data: string }) => {
       callback(payload)

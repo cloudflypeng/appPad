@@ -6,6 +6,7 @@ import {
   Package,
   PackageCheck,
   RefreshCw,
+  Search,
   TerminalSquare,
   Wrench
 } from 'lucide-react'
@@ -13,9 +14,11 @@ import {
 import EssentialsManager from '@/components/essentials/EssentialsManager'
 import BrowserCatalog from '@/components/homebrew/BrowserCatalog'
 import HomebrewManager from '@/components/homebrew/HomebrewManager'
+import HomebrewSearchManager from '@/components/homebrew/HomebrewSearchManager'
 import InstalledManager from '@/components/installed/InstalledManager'
 import FixedTopBar from '@/components/layout/FixedTopBar'
 import GlobalTerminalPanel from '@/components/layout/GlobalTerminalPanel'
+import MoleManager from '@/components/mole/MoleManager'
 import TerminalManager from '@/components/terminal/TerminalManager'
 import ToolsManager from '@/components/tools/ToolsManager'
 import { Button } from '@/components/ui/button'
@@ -38,7 +41,7 @@ const APP_TOPBAR_REFRESH_EVENT = 'app:topbar-refresh'
 
 function App(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<
-    'homebrew' | 'installed' | 'browser' | 'terminal' | 'essentials' | 'tools'
+    'homebrew' | 'installed' | 'search' | 'browser' | 'terminal' | 'essentials' | 'tools' | 'mole'
   >('homebrew')
   const [syncingInstalledApps, setSyncingInstalledApps] = useState(false)
   const insetContentRef = useRef<HTMLDivElement | null>(null)
@@ -55,6 +58,12 @@ function App(): React.JSX.Element {
       title: 'Installed',
       description: 'Apps and tools currently installed via Homebrew.',
       icon: List
+    },
+    {
+      key: 'search' as const,
+      title: 'Search',
+      description: 'Search Homebrew formulae and casks by keyword.',
+      icon: Search
     },
     {
       key: 'browser' as const,
@@ -78,6 +87,12 @@ function App(): React.JSX.Element {
       key: 'tools' as const,
       title: 'Tool',
       description: 'Common tools installable via Homebrew.',
+      icon: Wrench
+    },
+    {
+      key: 'mole' as const,
+      title: 'Mole',
+      description: 'Run and manage Mole commands with GUI controls.',
       icon: Wrench
     }
   ]
@@ -160,8 +175,10 @@ function App(): React.JSX.Element {
             {activeTab === 'browser' ? <BrowserCatalog /> : null}
             {activeTab === 'terminal' ? <TerminalManager /> : null}
             {activeTab === 'installed' ? <InstalledManager /> : null}
+            {activeTab === 'search' ? <HomebrewSearchManager /> : null}
             {activeTab === 'essentials' ? <EssentialsManager /> : null}
             {activeTab === 'tools' ? <ToolsManager /> : null}
+            {activeTab === 'mole' ? <MoleManager /> : null}
           </div>
         </div>
       </SidebarInset>

@@ -4,7 +4,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { existsSync } from 'fs'
 import Database from 'better-sqlite3'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+import icon from '../renderer/src/assets/logo.png?asset'
 
 function createWindow(): void {
   // Create the browser window.
@@ -15,7 +15,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform !== 'darwin' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -47,6 +47,23 @@ type BrewStatus = {
   installedAppCount: number | null
 }
 
+type MoleStatus = {
+  installed: boolean
+  currentVersion: string | null
+  installMethod: string | null
+}
+
+type CachedStatusPayload<T> = {
+  status: T | null
+  updatedAt: number | null
+}
+
+type SearchIconCacheItem = {
+  token: string
+  iconUrl: string | null
+  fallbackIconUrl: string | null
+}
+
 type CommandResult = {
   success: boolean
   code: number | null
@@ -75,6 +92,9 @@ type InstalledAppCacheItem = {
   name: string
   description: string
   homepage: string | null
+  iconUrl: string | null
+  fallbackIconUrl: string | null
+  iconKey: string | null
   brewType: 'cask' | 'formula'
   installed: boolean
 }
@@ -175,6 +195,25 @@ function chunkArray<T>(items: T[], size: number): T[][] {
     chunks.push(items.slice(i, i + size))
   }
   return chunks
+}
+
+function toDuckDuckGoFavicon(domainOrHomepage: string | null | undefined): string | null {
+  if (!domainOrHomepage) return null
+  try {
+    const normalized = domainOrHomepage.includes('://')
+      ? domainOrHomepage
+      : `https://${domainOrHomepage}`
+    const hostname = new URL(normalized).hostname
+    if (!hostname) return null
+    return `https://icons.duckduckgo.com/ip3/${hostname}.ico`
+  } catch {
+    return null
+  }
+}
+
+function toHomebrewIcon(token: string, brewType: 'cask' | 'formula'): string | null {
+  if (!token || brewType !== 'cask') return null
+  return `https://formulae.brew.sh/assets/icons/${encodeURIComponent(token)}.png`
 }
 
 function getBrowserCatalogCache(): BrowserCatalogCachePayload {
@@ -436,6 +475,85 @@ function getInstalledAppsStatus(tokens: string[]): { items: InstalledAppStatus[]
   return { items }
 }
 
+function setJsonCacheValue(cacheKey: string, value: unknown): number {
+  const db = getCacheDb()
+  const updatedAt = Date.now()
+  db.prepare(
+    `
+    INSERT INTO app_cache_kv (cache_key, cache_value, updated_at)
+    VALUES (@cache_key, @cache_value, @updated_at)
+    ON CONFLICT(cache_key) DO UPDATE SET
+      cache_value = excluded.cache_value,
+      updated_at = excluded.updated_at
+  `
+  ).run({
+    cache_key: cacheKey,
+    cache_value: JSON.stringify(value),
+    updated_at: updatedAt
+  })
+  return updatedAt
+}
+
+function getJsonCacheValue<T>(cacheKey: string): CachedStatusPayload<T> {
+  const db = getCacheDb()
+  const row = db
+    .prepare(
+      `
+      SELECT cache_value, updated_at
+      FROM app_cache_kv
+      WHERE cache_key = ?
+      LIMIT 1
+    `
+    )
+    .get(cacheKey) as { cache_value?: string; updated_at?: number } | undefined
+
+  if (!row?.cache_value) {
+    return { status: null, updatedAt: null }
+  }
+
+  try {
+    return {
+      status: JSON.parse(row.cache_value) as T,
+      updatedAt: row.updated_at ?? null
+    }
+  } catch {
+    return { status: null, updatedAt: row.updated_at ?? null }
+  }
+}
+
+function getSearchIconCache(tokens: string[]): { items: SearchIconCacheItem[] } {
+  if (tokens.length === 0) return { items: [] }
+  const payload = getJsonCacheValue<Record<string, { iconUrl: string | null; fallbackIconUrl: string | null }>>(
+    'search_icon_cache_v1'
+  ).status
+  const items = tokens.map((token) => {
+    const cached = payload?.[token]
+    return {
+      token,
+      iconUrl: cached?.iconUrl ?? null,
+      fallbackIconUrl: cached?.fallbackIconUrl ?? null
+    }
+  })
+  return { items }
+}
+
+function upsertSearchIconCache(items: SearchIconCacheItem[]): { success: true } {
+  const current =
+    getJsonCacheValue<Record<string, { iconUrl: string | null; fallbackIconUrl: string | null }>>(
+      'search_icon_cache_v1'
+    ).status ?? {}
+  const merged = { ...current }
+  items.forEach((item) => {
+    if (!item.token) return
+    merged[item.token] = {
+      iconUrl: item.iconUrl ?? null,
+      fallbackIconUrl: item.fallbackIconUrl ?? null
+    }
+  })
+  setJsonCacheValue('search_icon_cache_v1', merged)
+  return { success: true }
+}
+
 function getBaseEnv(): NodeJS.ProcessEnv {
   const normalizedPath = [
     '/opt/homebrew/bin',
@@ -684,6 +802,22 @@ function parseBrewInfoJsonPayload(raw: string): {
   return null
 }
 
+function parseMoleStatusFromOutput(raw: string): MoleStatus {
+  const output = raw.trim()
+  if (!output) {
+    return { installed: false, currentVersion: null, installMethod: null }
+  }
+
+  const versionMatch = output.match(/Mole version\s+([^\s]+)/i)
+  const installMethodMatch = output.match(/^Install:\s*(.+)$/im)
+
+  return {
+    installed: true,
+    currentVersion: versionMatch?.[1]?.trim() ?? null,
+    installMethod: installMethodMatch?.[1]?.trim() ?? null
+  }
+}
+
 async function resolveBrewPath(): Promise<string | null> {
   for (const brewPath of COMMON_BREW_PATHS) {
     if (existsSync(brewPath)) {
@@ -765,6 +899,30 @@ async function getBrewStatus(): Promise<BrewStatus> {
     latestVersion,
     installedAppCount
   }
+}
+
+function getCachedBrewStatus(): CachedStatusPayload<BrewStatus> {
+  return getJsonCacheValue<BrewStatus>('status_brew')
+}
+
+async function refreshBrewStatusCache(): Promise<CachedStatusPayload<BrewStatus>> {
+  const status = await getBrewStatus()
+  const updatedAt = setJsonCacheValue('status_brew', status)
+  return { status, updatedAt }
+}
+
+function getCachedMoleStatus(): CachedStatusPayload<MoleStatus> {
+  return getJsonCacheValue<MoleStatus>('status_mole')
+}
+
+async function refreshMoleStatusCache(): Promise<CachedStatusPayload<MoleStatus>> {
+  const result = await runShellCommand('mo --version', 1000 * 30)
+  const output = `${result.stdout}\n${result.stderr}`
+  const status = result.success
+    ? parseMoleStatusFromOutput(output)
+    : { installed: false, currentVersion: null, installMethod: null }
+  const updatedAt = setJsonCacheValue('status_mole', status)
+  return { status, updatedAt }
 }
 
 async function syncInstalledAppsCache(): Promise<{ success: boolean; count: number; error?: string }> {
@@ -850,6 +1008,23 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
     const installedTokens = [...new Set([...installedCaskTokens, ...installedFormulaTokens])]
     const installedSet = new Set(installedTokens)
     const formulaSet = new Set(installedFormulaTokens)
+    const selectCatalogIcon = db.prepare(
+      `
+      SELECT icon_url, fallback_icon_url, icon_key
+      FROM catalog_items_cache
+      WHERE token = ? AND catalog_key != 'installed'
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `
+    )
+    const selectBrowserCatalogIcon = db.prepare(
+      `
+      SELECT icon_url, fallback_icon_url
+      FROM browser_catalog_cache
+      WHERE token = ?
+      LIMIT 1
+    `
+    )
     const metadataMap = new Map<
       string,
       { name: string; description: string; homepage: string | null; brewType: 'cask' | 'formula' }
@@ -907,12 +1082,28 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
 
     const appRows: InstalledAppCacheItem[] = installedTokens.map((token) => {
       const meta = metadataMap.get(token)
+      const brewType = meta?.brewType || (formulaSet.has(token) ? 'formula' : 'cask')
+      const catalogIconRow = selectCatalogIcon.get(token) as
+        | { icon_url: string | null; fallback_icon_url: string | null; icon_key: string | null }
+        | undefined
+      const browserIconRow = selectBrowserCatalogIcon.get(token) as
+        | { icon_url: string | null; fallback_icon_url: string | null }
+        | undefined
+      const homebrewIcon = toHomebrewIcon(token, brewType)
+      const generatedIcon = toDuckDuckGoFavicon(meta?.homepage || null)
+      const iconUrl = homebrewIcon || catalogIconRow?.icon_url || browserIconRow?.icon_url || generatedIcon
+      const fallbackIconUrl =
+        catalogIconRow?.fallback_icon_url || browserIconRow?.fallback_icon_url || iconUrl
+
       return {
         token,
         name: meta?.name || token,
         description: meta?.description || '',
         homepage: meta?.homepage || null,
-        brewType: meta?.brewType || (formulaSet.has(token) ? 'formula' : 'cask'),
+        iconUrl,
+        fallbackIconUrl,
+        iconKey: catalogIconRow?.icon_key || null,
+        brewType,
         installed: true
       }
     })
@@ -997,10 +1188,10 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
           name: row.name,
           description: row.description,
           homepage: row.homepage,
-          icon_url: null,
-          fallback_icon_url: null,
+          icon_url: row.iconUrl,
+          fallback_icon_url: row.fallbackIconUrl,
           installed: 1,
-          icon_key: null,
+          icon_key: row.iconKey,
           install_command: row.brewType === 'cask' ? `brew install --cask ${row.token}` : `brew install ${row.token}`,
           uninstall_command:
             row.brewType === 'cask' ? `brew uninstall --cask ${row.token}` : `brew uninstall ${row.token}`,
@@ -1060,6 +1251,10 @@ async function syncInstalledAppsCache(): Promise<{ success: boolean; count: numb
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  if (process.platform === 'darwin') {
+    app.dock?.setIcon(icon)
+  }
+
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.appPad')
 
@@ -1073,7 +1268,8 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.handle('brew:get-status', async () => {
-    return getBrewStatus()
+    const refreshed = await refreshBrewStatusCache()
+    return refreshed.status
   })
   ipcMain.handle('terminal:create', async () => {
     return createTerminalSession()
@@ -1108,6 +1304,27 @@ app.whenReady().then(() => {
   ipcMain.handle('cache:sync-installed-apps', async () => {
     return syncInstalledAppsCache()
   })
+  ipcMain.handle('cache:get-search-icon-cache', async (_, payload: { tokens: string[] }) => {
+    return getSearchIconCache(payload.tokens)
+  })
+  ipcMain.handle(
+    'cache:upsert-search-icon-cache',
+    async (_, payload: { items: SearchIconCacheItem[] }) => {
+      return upsertSearchIconCache(payload.items)
+    }
+  )
+  ipcMain.handle('cache:get-brew-status', async () => {
+    return getCachedBrewStatus()
+  })
+  ipcMain.handle('cache:refresh-brew-status', async () => {
+    return refreshBrewStatusCache()
+  })
+  ipcMain.handle('cache:get-mole-status', async () => {
+    return getCachedMoleStatus()
+  })
+  ipcMain.handle('cache:refresh-mole-status', async () => {
+    return refreshMoleStatusCache()
+  })
   ipcMain.handle('brew:diagnose-version', async () => {
     const brewPath = await resolveBrewPath()
     if (!brewPath) {
@@ -1131,7 +1348,7 @@ app.whenReady().then(() => {
     const command =
       'NONINTERACTIVE=1 CI=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
     const result = await runShellCommand(command, 1000 * 60 * 30)
-    const status = await getBrewStatus()
+    const status = (await refreshBrewStatusCache()).status
 
     return {
       ...result,
@@ -1147,7 +1364,7 @@ app.whenReady().then(() => {
         stdout: '',
         stderr: '',
         error: 'Homebrew is not installed.',
-        status: await getBrewStatus()
+        status: (await refreshBrewStatusCache()).status
       }
     }
 
@@ -1159,7 +1376,7 @@ app.whenReady().then(() => {
       stderr: updateResult.stderr,
       error: updateResult.error
     }
-    const status = await getBrewStatus()
+    const status = (await refreshBrewStatusCache()).status
 
     return {
       ...result,
@@ -1169,6 +1386,8 @@ app.whenReady().then(() => {
 
   createWindow()
   void syncInstalledAppsCache()
+  void refreshBrewStatusCache()
+  void refreshMoleStatusCache()
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

@@ -16,6 +16,17 @@ type BrewActionResult = {
   status: BrewStatus
 }
 
+type MoleStatus = {
+  installed: boolean
+  currentVersion: string | null
+  installMethod: string | null
+}
+
+type CachedStatusPayload<T> = {
+  status: T | null
+  updatedAt: number | null
+}
+
 type BrewDiagnoseResult = {
   brewPath: string | null
   version: {
@@ -105,6 +116,18 @@ type AppAPI = {
     count: number
     error?: string
   }>
+  getSearchIconCache: (tokens: string[]) => Promise<{
+    items: Array<{
+      token: string
+      iconUrl: string | null
+      fallbackIconUrl: string | null
+    }>
+  }>
+  upsertSearchIconCache: (items: Array<{ token: string; iconUrl: string | null; fallbackIconUrl: string | null }>) => Promise<{ success: true }>
+  getCachedBrewStatus: () => Promise<CachedStatusPayload<BrewStatus>>
+  refreshBrewStatusCache: () => Promise<CachedStatusPayload<BrewStatus>>
+  getCachedMoleStatus: () => Promise<CachedStatusPayload<MoleStatus>>
+  refreshMoleStatusCache: () => Promise<CachedStatusPayload<MoleStatus>>
   onTerminalData: (callback: (payload: { sessionId: number; data: string }) => void) => () => void
   onTerminalExit: (callback: (payload: { sessionId: number; code: number | null }) => void) => () => void
 }

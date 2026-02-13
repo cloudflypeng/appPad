@@ -3,7 +3,6 @@ import { AlertCircle } from 'lucide-react'
 
 import CatalogItemRow from '@/components/catalog/CatalogItemRow'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { executeWithGlobalTerminal } from '@/lib/globalTerminal'
 import {
@@ -312,104 +311,102 @@ function CatalogTab({
   return (
     <main className="flex justify-center py-4">
       <div className="mx-auto flex w-4/5 flex-col gap-4">
-        <Card>
-          <CardContent className="space-y-3">
-            {brewInstalled === false ? (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Homebrew is not installed. Install Homebrew in the Homebrew tab before installing{' '}
-                  {title}.
-                </AlertDescription>
-              </Alert>
-            ) : null}
+        <div className="space-y-3">
+          {brewInstalled === false ? (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Homebrew is not installed. Install Homebrew in the Homebrew tab before installing{' '}
+                {title}.
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
-            {loading && items.length === 0 ? (
-              <div className="space-y-3">
-                {Array.from({ length: discoverInstalled ? 8 : normalizedSeeds.length || 6 }).map((_, idx) => (
-                  <Skeleton key={idx} className="h-20 w-full rounded-md" />
-                ))}
-              </div>
-            ) : items.length === 0 ? (
-              <div className="rounded-md border bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
-                {discoverInstalled ? 'No installed Homebrew formulas or casks found.' : 'No items found.'}
-              </div>
-            ) : discoverInstalled ? (
-              <div className="space-y-4">
-                <section className="space-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    Casks
-                  </h3>
-                  {installedCasks.length === 0 ? (
-                    <div className="rounded-md border bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
-                      No installed casks found.
-                    </div>
-                  ) : (
-                    <div className="space-y-2 flex flex-col gap-3">
-                      {installedCasks.map((item) => (
-                        <CatalogItemRow
-                          key={`${item.brewType ?? 'item'}:${item.token}`}
-                          item={item}
-                          disabled={brewInstalled !== true || runningToken !== null}
-                          running={runningToken === item.token}
-                          onToggle={(next) => {
-                            void toggleInstall(next)
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
+          {loading && items.length === 0 ? (
+            <div className="space-y-3">
+              {Array.from({ length: discoverInstalled ? 8 : normalizedSeeds.length || 6 }).map((_, idx) => (
+                <Skeleton key={idx} className="h-20 w-full rounded-md" />
+              ))}
+            </div>
+          ) : items.length === 0 ? (
+            <div className="rounded-md border bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
+              {discoverInstalled ? 'No installed Homebrew formulas or casks found.' : 'No items found.'}
+            </div>
+          ) : discoverInstalled ? (
+            <div className="space-y-4">
+              <section className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Casks
+                </h3>
+                {installedCasks.length === 0 ? (
+                  <div className="rounded-md border bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
+                    No installed casks found.
+                  </div>
+                ) : (
+                  <div className="space-y-2 flex flex-col gap-3">
+                    {installedCasks.map((item) => (
+                      <CatalogItemRow
+                        key={`${item.brewType ?? 'item'}:${item.token}`}
+                        item={item}
+                        disabled={brewInstalled !== true || runningToken !== null}
+                        running={runningToken === item.token}
+                        onToggle={(next) => {
+                          void toggleInstall(next)
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
 
-                <section className="space-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    Formulae
-                  </h3>
-                  {installedFormulae.length === 0 ? (
-                    <div className="rounded-md border bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
-                      No installed formulae found.
-                    </div>
-                  ) : (
-                    <div className="space-y-2 flex flex-col gap-3">
-                      {installedFormulae.map((item) => (
-                        <CatalogItemRow
-                          key={`${item.brewType ?? 'item'}:${item.token}`}
-                          item={item}
-                          disabled={brewInstalled !== true || runningToken !== null}
-                          running={runningToken === item.token}
-                          onToggle={(next) => {
-                            void toggleInstall(next)
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              </div>
-            ) : (
-              <div className="space-y-2 flex flex-col gap-3">
-                {items.map((item) => (
-                  <CatalogItemRow
-                    key={`${item.brewType ?? 'item'}:${item.token}`}
-                    item={item}
-                    disabled={brewInstalled !== true || runningToken !== null}
-                    running={runningToken === item.token}
-                    onToggle={(next) => {
-                      void toggleInstall(next)
-                    }}
-                  />
-                ))}
-              </div>
-            )}
+              <section className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Formulae
+                </h3>
+                {installedFormulae.length === 0 ? (
+                  <div className="rounded-md border bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
+                    No installed formulae found.
+                  </div>
+                ) : (
+                  <div className="space-y-2 flex flex-col gap-3">
+                    {installedFormulae.map((item) => (
+                      <CatalogItemRow
+                        key={`${item.brewType ?? 'item'}:${item.token}`}
+                        item={item}
+                        disabled={brewInstalled !== true || runningToken !== null}
+                        running={runningToken === item.token}
+                        onToggle={(next) => {
+                          void toggleInstall(next)
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          ) : (
+            <div className="space-y-2 flex flex-col gap-3">
+              {items.map((item) => (
+                <CatalogItemRow
+                  key={`${item.brewType ?? 'item'}:${item.token}`}
+                  item={item}
+                  disabled={brewInstalled !== true || runningToken !== null}
+                  running={runningToken === item.token}
+                  onToggle={(next) => {
+                    void toggleInstall(next)
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
-            {error ? (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            ) : null}
-          </CardContent>
-        </Card>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
       </div>
     </main>
   )
