@@ -23,6 +23,7 @@ nsis:
 mac:
   icon: src/renderer/src/assets/logo.png
   entitlementsInherit: build/entitlements.mac.plist
+  hardenedRuntime: false
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.

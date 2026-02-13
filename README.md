@@ -32,3 +32,11 @@ $ pnpm build:mac
 # For Linux
 $ pnpm build:linux
 ```
+
+### macOS Gatekeeper (If App Is Blocked)
+
+If macOS reports the app as damaged or blocks opening, remove quarantine attributes:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/apppad.app
+```
