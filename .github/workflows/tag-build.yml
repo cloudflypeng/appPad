@@ -1,4 +1,4 @@
-name: Create Release
+name: Release Mac Build
 
 on:
   push:
@@ -10,26 +10,25 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Create Release
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME=${{ github.ref_name }}
+          set -euo pipefail
+          TAG_NAME="${{ github.ref_name }}"
           RELEASE_NAME="Release ${TAG_NAME}"
 
-          PREV_TAG=$(git tag -l | grep -v "^${TAG_NAME}$" | sort -V | tail -1)
-
-          if [ -z "$PREV_TAG" ]; then
+          PREV_TAG=$(git tag -l | grep -v "^${TAG_NAME}$" | sort -V | tail -1 || true)
+          if [ -z "${PREV_TAG}" ]; then
             CHANGELOG="Initial release"
           else
-            CHANGELOG=$(git log ${PREV_TAG}..${TAG_NAME} --pretty=format:"- %s" --reverse)
+            CHANGELOG=$(git log "${PREV_TAG}..${TAG_NAME}" --pretty=format:"- %s" --reverse)
           fi
 
           gh release create "${TAG_NAME}" \
@@ -37,20 +36,11 @@ jobs:
             --notes "${CHANGELOG}" \
             --draft=false || echo "Release ${TAG_NAME} already exists"
 
-  upload-assets:
+  build-macos:
     needs: create-release
-    runs-on: ${{ matrix.os }}
-    env:
-      NPM_CONFIG_ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
-      ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest]
-
+    runs-on: macos-latest
     permissions:
       contents: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -67,8 +57,7 @@ jobs:
 
       - name: Get pnpm store directory
         shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
 
       - name: Setup pnpm cache
         uses: actions/cache@v4
@@ -81,42 +70,30 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build app (macOS)
-        if: runner.os == 'macOS'
+      - name: Build mac artifacts (zip + dmg)
+        env:
+          ELECTRON_BUILDER_BINARIES_DOWNLOAD_OVERRIDE_URL: https://github.com/electron-userland/electron-builder-binaries/releases/download/dmg-builder@1.2.0
         run: pnpm run build:mac
 
       - name: Upload macOS assets
-        if: runner.os == 'macOS'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
+          set -euo pipefail
           ls -la dist || true
           for file in dist/*.dmg dist/*.zip dist/*.blockmap dist/latest-mac.yml dist/latest.yml; do
             if [ -f "$file" ]; then
               echo "Uploading $file..."
-              gh release upload ${{ github.ref_name }} "$file" --clobber
+              gh release upload "${{ github.ref_name }}" "$file" --clobber
             fi
           done
 
-      - name: Debug - List dist files
+      - name: Debug - list dist files
         if: always()
         shell: bash
         run: |
           echo "=== dist directory contents ==="
           ls -lah dist/ || echo "No dist directory"
-
-          echo "=== dist directory tree (depth 3) ==="
-          find dist -maxdepth 3 -print 2>/dev/null | sed -n '1,200p'
-
-          echo "=== dist artifacts (common) ==="
-          find dist -type f \
-            \( -name "*.dmg" \
-            -o -name "*.zip" \
-            -o -name "*.exe" \
-            -o -name "*.AppImage" \
-            -o -name "*.deb" \
-            -o -name "*.blockmap" \
-            -o -name "latest-*.yml" \
-            -o -name "latest.yml" \) \
-            2>/dev/null | sed -n '1,200p'
+          echo "=== dist files ==="
+          find dist -maxdepth 3 -type f 2>/dev/null | sed -n '1,200p'
