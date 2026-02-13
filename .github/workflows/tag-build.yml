@@ -42,12 +42,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       NPM_CONFIG_ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
-      npm_config_electron_builder_binaries_mirror: https://github.com/electron-userland/electron-builder-binaries/releases/download/
       ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest]
 
     permissions:
       contents: write
@@ -86,14 +85,6 @@ jobs:
         if: runner.os == 'macOS'
         run: pnpm run build:mac
 
-      - name: Build app (Windows)
-        if: runner.os == 'Windows'
-        run: pnpm run build:win
-
-      - name: Build app (Linux)
-        if: runner.os == 'Linux'
-        run: pnpm run build && pnpm exec electron-builder --linux AppImage deb --publish never
-
       - name: Upload macOS assets
         if: runner.os == 'macOS'
         env:
@@ -102,33 +93,6 @@ jobs:
         run: |
           ls -la dist || true
           for file in dist/*.dmg dist/*.zip dist/*.blockmap dist/latest-mac.yml dist/latest.yml; do
-            if [ -f "$file" ]; then
-              echo "Uploading $file..."
-              gh release upload ${{ github.ref_name }} "$file" --clobber
-            fi
-          done
-
-      - name: Upload Windows assets
-        if: runner.os == 'Windows'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
-        run: |
-          if (Test-Path "dist") {
-            Get-ChildItem -Path "dist" -Recurse -Include @("*.exe", "*.blockmap", "latest.yml", "latest-windows.yml") | ForEach-Object {
-              Write-Host "Uploading $($_.Name)..."
-              gh release upload ${{ github.ref_name }} "$($_.FullName)" --clobber 2>$null
-            }
-          }
-
-      - name: Upload Linux assets
-        if: runner.os == 'Linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          ls -la dist || true
-          for file in dist/*.AppImage dist/*.deb dist/*.blockmap dist/latest-linux.yml dist/latest.yml; do
             if [ -f "$file" ]; then
               echo "Uploading $file..."
               gh release upload ${{ github.ref_name }} "$file" --clobber
