@@ -1,4 +1,4 @@
-name: Tag Build
+name: Create Release
 
 on:
   push:
@@ -6,49 +6,150 @@ on:
       - 'v*'
 
 jobs:
-  build:
-    name: Build (${{ matrix.os }})
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME=${{ github.ref_name }}
+          RELEASE_NAME="Release ${TAG_NAME}"
+
+          PREV_TAG=$(git tag -l | grep -v "^${TAG_NAME}$" | sort -V | tail -1)
+
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG="Initial release"
+          else
+            CHANGELOG=$(git log ${PREV_TAG}..${TAG_NAME} --pretty=format:"- %s" --reverse)
+          fi
+
+          gh release create "${TAG_NAME}" \
+            --title "${RELEASE_NAME}" \
+            --notes "${CHANGELOG}" \
+            --draft=false || echo "Release ${TAG_NAME} already exists"
+
+  upload-assets:
+    needs: create-release
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest
-            command: pnpm run build:mac
-            artifact_name: apppad-macos
-          - os: windows-latest
-            command: pnpm run build:win
-            artifact_name: apppad-windows
-          - os: ubuntu-latest
-            command: pnpm run build && pnpm exec electron-builder --linux AppImage deb
-            artifact_name: apppad-linux
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: ${{ matrix.command }}
+      - name: Build app (macOS)
+        if: runner.os == 'macOS'
+        run: pnpm run build:mac
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: |
-            dist/**
-            out/**
-          if-no-files-found: ignore
+      - name: Build app (Windows)
+        if: runner.os == 'Windows'
+        run: pnpm run build:win
+
+      - name: Build app (Linux)
+        if: runner.os == 'Linux'
+        run: pnpm run build && pnpm exec electron-builder --linux AppImage deb --publish never
+
+      - name: Upload macOS assets
+        if: runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          ls -la dist || true
+          for file in dist/*.dmg dist/*.zip dist/*.blockmap dist/latest-mac.yml dist/latest.yml; do
+            if [ -f "$file" ]; then
+              echo "Uploading $file..."
+              gh release upload ${{ github.ref_name }} "$file" --clobber
+            fi
+          done
+
+      - name: Upload Windows assets
+        if: runner.os == 'Windows'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          if (Test-Path "dist") {
+            Get-ChildItem -Path "dist" -Recurse -Include @("*.exe", "*.blockmap", "latest.yml", "latest-windows.yml") | ForEach-Object {
+              Write-Host "Uploading $($_.Name)..."
+              gh release upload ${{ github.ref_name }} "$($_.FullName)" --clobber 2>$null
+            }
+          }
+
+      - name: Upload Linux assets
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          ls -la dist || true
+          for file in dist/*.AppImage dist/*.deb dist/*.blockmap dist/latest-linux.yml dist/latest.yml; do
+            if [ -f "$file" ]; then
+              echo "Uploading $file..."
+              gh release upload ${{ github.ref_name }} "$file" --clobber
+            fi
+          done
+
+      - name: Debug - List dist files
+        if: always()
+        shell: bash
+        run: |
+          echo "=== dist directory contents ==="
+          ls -lah dist/ || echo "No dist directory"
+
+          echo "=== dist directory tree (depth 3) ==="
+          find dist -maxdepth 3 -print 2>/dev/null | sed -n '1,200p'
+
+          echo "=== dist artifacts (common) ==="
+          find dist -type f \
+            \( -name "*.dmg" \
+            -o -name "*.zip" \
+            -o -name "*.exe" \
+            -o -name "*.AppImage" \
+            -o -name "*.deb" \
+            -o -name "*.blockmap" \
+            -o -name "latest-*.yml" \
+            -o -name "latest.yml" \) \
+            2>/dev/null | sed -n '1,200p'
