@@ -48,7 +48,7 @@ function FixedTopBar({
 
   return (
     <header
-      className="fixed top-0 z-40 flex h-20 w-full items-center justify-between px-6 bg-background/80 backdrop-blur md:px-8"
+      className="fixed top-0 z-40 flex h-20 w-full items-center justify-between px-6 bg-background/80 backdrop-blur md:px-8 select-none"
       style={{ left: rect.left, width: rect.width }}
     >
       <div className="flex items-center">

@@ -46,6 +46,13 @@ function chunkTokens(tokens: string[], size = 50): string[][] {
   return chunks
 }
 
+function parseTokenList(raw: string): string[] {
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
 function CatalogTab({
   catalogKey,
   title,
@@ -91,7 +98,6 @@ function CatalogTab({
             setItems(cachedPayload.items as CatalogItem[])
             setBrewInstalled(cachedPayload.brewInstalled)
             setLoading(false)
-            return
           }
         } else {
           const cachedMap = new Set(cachedPayload.items.map((item) => item.token))
@@ -139,6 +145,17 @@ function CatalogTab({
 
       const installedCaskSet = new Set(installedCaskTokens)
       const installedFormulaSet = new Set(installedFormulaTokens)
+      const outdatedCaskSet = new Set<string>()
+      const outdatedFormulaSet = new Set<string>()
+
+      if (discoverInstalled) {
+        const [outdatedCaskResult, outdatedFormulaResult] = await Promise.all([
+          window.api.executeTerminalCommand('brew outdated --cask --quiet'),
+          window.api.executeTerminalCommand('brew outdated --formula --quiet')
+        ])
+        parseTokenList(outdatedCaskResult.stdout).forEach((token) => outdatedCaskSet.add(token))
+        parseTokenList(outdatedFormulaResult.stdout).forEach((token) => outdatedFormulaSet.add(token))
+      }
 
       for (const tokenChunk of chunkTokens(installedCaskTokens)) {
         if (tokenChunk.length === 0) continue
@@ -183,6 +200,7 @@ function CatalogTab({
                 iconUrl: homepage ? toDuckDuckGoFavicon(homepage) : null,
                 fallbackIconUrl: homepage ? toDuckDuckGoFavicon(homepage) : null,
                 installed: true,
+                hasUpdate: outdatedCaskSet.has(token),
                 iconKey: null,
                 installCommand: `brew install --cask ${token}`,
                 uninstallCommand: `brew uninstall --cask ${token}`,
@@ -201,13 +219,19 @@ function CatalogTab({
                 iconUrl: homepage ? toDuckDuckGoFavicon(homepage) : null,
                 fallbackIconUrl: homepage ? toDuckDuckGoFavicon(homepage) : null,
                 installed: true,
+                hasUpdate: outdatedFormulaSet.has(token),
                 iconKey: null,
                 installCommand: `brew install ${token}`,
                 uninstallCommand: `brew uninstall ${token}`,
                 updateCommand: `brew upgrade ${token}`
               }
             })
-          ].sort((a, b) => a.name.localeCompare(b.name))
+          ].sort((a, b) => {
+            const aPriority = a.hasUpdate ? 1 : 0
+            const bPriority = b.hasUpdate ? 1 : 0
+            if (aPriority !== bPriority) return bPriority - aPriority
+            return a.name.localeCompare(b.name)
+          })
         : normalizedSeeds.map((seed) => {
             const brewType = seed.brewType ?? defaultBrewType
             const cask = caskMeta.get(seed.token)
@@ -275,6 +299,15 @@ function CatalogTab({
     }
   }
 
+  const refreshCatalogInBackground = (): void => {
+    void (async () => {
+      await window.api.syncInstalledAppsCache()
+      await loadCatalog()
+    })().catch((err) => {
+      setError(err instanceof Error ? err.message : `Failed to refresh ${title} list.`)
+    })
+  }
+
   const toggleInstall = async (item: CatalogItem): Promise<void> => {
     const action: 'install' | 'uninstall' = item.installed ? 'uninstall' : 'install'
     setRunningAction({ token: item.token, action })
@@ -291,9 +324,20 @@ function CatalogTab({
             result.stderr ||
             `${action === 'uninstall' ? 'Uninstall' : 'Install'} failed for ${item.token}.`
         )
+      } else {
+        setItems((prev) =>
+          prev.map((entry) =>
+            entry.token === item.token
+              ? {
+                  ...entry,
+                  installed: action === 'install',
+                  hasUpdate: action === 'install' ? false : entry.hasUpdate
+                }
+              : entry
+          )
+        )
+        refreshCatalogInBackground()
       }
-      await window.api.syncInstalledAppsCache()
-      await loadCatalog()
     } catch (err) {
       setError(
         err instanceof Error
@@ -316,9 +360,19 @@ function CatalogTab({
       const result = await executeWithGlobalTerminal(command)
       if (!result.success) {
         setError(result.error || result.stderr || `Update failed for ${item.token}.`)
+      } else {
+        setItems((prev) =>
+          prev.map((entry) =>
+            entry.token === item.token
+              ? {
+                  ...entry,
+                  hasUpdate: false
+                }
+              : entry
+          )
+        )
+        refreshCatalogInBackground()
       }
-      await window.api.syncInstalledAppsCache()
-      await loadCatalog()
     } catch (err) {
       setError(err instanceof Error ? err.message : `Update failed for ${item.token}.`)
     } finally {

@@ -67,6 +67,10 @@ function findStandaloneMarkerLine(input: string, marker: string): number {
   return -1
 }
 
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function shouldFilterExecNoiseLine(line: string, beginMarker: string, doneMarker: string): boolean {
   const normalized = line.replace(/\r?\n$/, '')
   if (!normalized.trim()) return false
@@ -323,8 +327,9 @@ function GlobalTerminalPanel(): React.JSX.Element {
         return processExecOutput(afterBegin)
       }
 
-      const markerIndex = combined.indexOf(active.doneMarker)
-      if (markerIndex === -1) {
+      const donePattern = new RegExp(`(?:^|\\r?\\n)${escapeRegExp(active.doneMarker)}(-?\\d+)__`)
+      const doneMatch = donePattern.exec(combined)
+      if (!doneMatch) {
         const keepLen = getMarkerTailLength(combined, active.doneMarker)
         const rawVisible = combined.slice(0, combined.length - keepLen)
         const filtered = filterExecNoiseChunk(rawVisible, active)
@@ -334,16 +339,9 @@ function GlobalTerminalPanel(): React.JSX.Element {
         return filtered.visible
       }
 
-      const afterMarker = combined.slice(markerIndex + active.doneMarker.length)
-      const codeMatch = afterMarker.match(/^(-?\d+)__/)
-      if (!codeMatch) {
-        const rawVisible = combined.slice(0, markerIndex)
-        const filtered = filterExecNoiseChunk(rawVisible, active)
-        active.partial = combined.slice(markerIndex)
-        active.outputFilterPartial = filtered.partial
-        active.captured += filtered.visible
-        return filtered.visible
-      }
+      const markerIndex = combined.indexOf(active.doneMarker, doneMatch.index)
+      const parsedCode = Number.parseInt(doneMatch[1] ?? '1', 10)
+      const markerSuffixLength = active.doneMarker.length + String(doneMatch[1] ?? '').length + 2
 
       const rawVisibleBefore = combined.slice(0, markerIndex)
       const filteredBefore = filterExecNoiseChunk(rawVisibleBefore, active)
@@ -357,7 +355,6 @@ function GlobalTerminalPanel(): React.JSX.Element {
       }
       active.outputFilterPartial = ''
 
-      const parsedCode = Number.parseInt(codeMatch[1] ?? '1', 10)
       const exitCode = Number.isNaN(parsedCode) ? 1 : parsedCode
       const requestId = active.requestId
       const stdout = active.captured
@@ -384,7 +381,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
 
       suppressNextPromptRef.current = true
       void startNextExec()
-      return filteredBefore.visible
+      return filteredBefore.visible + combined.slice(markerIndex + markerSuffixLength)
     }
 
     const stripPostExecPromptNoise = (output: string): string => {

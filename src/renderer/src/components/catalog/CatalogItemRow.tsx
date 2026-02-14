@@ -100,6 +100,9 @@ function CatalogItemRow({
             <Badge variant={item.installed ? 'default' : 'secondary'}>
               {item.installed ? 'Installed' : 'Not Installed'}
             </Badge>
+            {item.installed && item.hasUpdate ? (
+              <Badge variant="destructive">Update Available</Badge>
+            ) : null}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
           <p className="mt-2 font-mono text-xs text-muted-foreground">

@@ -138,7 +138,7 @@ function App(): React.JSX.Element {
         className="fixed inset-x-0 top-0 z-[60] h-8"
         style={{ WebkitAppRegion: 'drag' } as CSSProperties}
       />
-      <Sidebar>
+      <Sidebar className="select-none">
         <SidebarHeader className="px-3 pt-10">
           <div className="mr-8 text-3xl">APPAD</div>
         </SidebarHeader>

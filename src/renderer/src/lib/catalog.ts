@@ -23,6 +23,7 @@ export type CatalogItem = {
   installCommand?: string
   uninstallCommand?: string
   updateCommand?: string
+  hasUpdate?: boolean
 }
 
 export function formatNameFromToken(token: string): string {
