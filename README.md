@@ -1,104 +1,110 @@
-# apppad
+# appPad
 
-`apppad` is an Electron desktop app for managing Homebrew packages and running
-Mole commands with a GUI.
+`appPad` 是一个基于 Electron 的桌面应用，用图形界面管理 Homebrew 包，并提供 Mole
+常用命令入口。
 
-This README is aligned with the current Git history (latest tags and features up
-to `v1.0.9`).
+## 项目功能
 
-## Core Features
+1. Homebrew 管理
 
-- Homebrew status management:
-  - Detect install status and versions
-  - Update/upgrade actions
-  - Status cache persisted in SQLite, cache-first UI with background refresh
-- Catalog-based package management:
-  - Browser/Terminal/Tools/Essentials tabs
-  - Install/uninstall actions with global terminal output
-- Installed tab:
-  - List installed casks and formulae from cache
-- Homebrew Search tab:
-  - Search formula/cask with `brew search`
-  - Install/uninstall directly from search results
-  - Search icons are cached in SQLite; missing icons are fetched and backfilled
-- Mole tab:
-  - Detect Mole installation and version (cached in SQLite)
-  - Update Mole
-  - Query uninstallable apps and uninstall by source:
-    - If app is from Homebrew cache: use `brew uninstall --cask`
-    - Otherwise: use `mo uninstall <app>`
-- Global terminal panel:
-  - Shared command output panel
-  - Manual open button supported
+- 检测 Homebrew 是否安装、当前版本、最新版本。
+- 支持安装、更新、全量升级。
+- 提供 cask 残留强制清理能力。
+- 状态缓存到本地 SQLite，页面优先显示缓存并后台刷新。
 
-## Tech Stack
+2. 分类包管理
+
+- 提供 Browser / Terminal / Essentials / Tools 分类页。
+- 每个条目支持安装、卸载、升级，命令输出统一进入全局终端面板。
+
+3. Installed（已安装）页
+
+- 展示已安装的 cask 与 formula。
+- 识别可升级项（outdated），打上更新标签并优先排序到顶部。
+
+4. Search（搜索）页
+
+- 基于 `brew search` 搜索 cask/formula。
+- 支持从搜索结果直接安装/卸载。
+- 图标信息会缓存，缺失时自动补全。
+
+5. Mole 管理
+
+- 检测 Mole 安装状态、版本和安装来源。
+- 支持 `mo update`、`mo clean`。
+- 支持查询可卸载应用，并根据来源自动选择 `brew uninstall --cask` 或
+  `mo uninstall`。
+
+6. 应用更新
+
+- 支持检查新版本、下载更新并安装。
+
+7. 全局终端面板
+
+- 所有命令统一输出到一个终端面板。
+- 支持 `zsh / bash` 切换。
+
+## 技术栈
 
 - Electron + electron-vite
 - React + TypeScript
 - Tailwind CSS
-- better-sqlite3 (local cache database)
+- better-sqlite3（本地缓存数据库）
+- xterm.js（内置终端）
 
-## Local Development
+## 本地开发
 
-### Install
+1. 安装依赖
 
 ```bash
 pnpm install
 ```
 
-### Run in development
+2. 启动开发模式
 
 ```bash
 pnpm dev
 ```
 
-### Typecheck
+3. 类型检查
 
 ```bash
 pnpm typecheck
 ```
 
-## Build
+## 构建
 
 ```bash
 pnpm build:mac
 ```
 
-## Release Flow
+## 发布流程
 
-### Local release command
-
-The project provides:
+1. 本地发布命令
 
 ```bash
 pnpm run release
 ```
 
-This command:
+该命令会自动：
 
-1. bumps patch version
-2. commits version files
-3. creates `v<version>` tag
-4. pushes commit and tag
+- 递增 patch 版本号
+- 提交版本相关文件
+- 创建 `v<version>` 标签
+- 推送 commit 与 tag
 
-### GitHub Actions
+2. GitHub Actions
 
-Tag push (`v*`) triggers `.github/workflows/tag-build.yml`:
+推送 `v*` 标签后会触发 `.github/workflows/tag-build.yml`，执行：
 
-1. create GitHub Release
-2. build macOS artifacts
-3. upload artifacts to the release
+- 创建 GitHub Release
+- 构建 macOS 产物
+- 上传构建产物到 Release
 
-## macOS Gatekeeper (If Blocked)
+## macOS 打开受限处理
 
-If macOS reports the app as damaged or blocks opening:
+如果系统提示应用损坏或阻止打开，可执行：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/apppad.app
-```
-
-If needed, open once from terminal:
-
-```bash
-open /Applications/apppad.app
 ```
