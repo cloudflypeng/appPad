@@ -631,15 +631,38 @@ function GlobalTerminalPanel(): React.JSX.Element {
               <span>{sessionReady ? 'Terminal' : 'Starting shell...'}</span>
             </div>
             <div className="flex items-center gap-2">
-              <select
-                value={selectedShell}
-                onChange={(event) => switchTerminalShell(event.target.value === 'bash' ? 'bash' : 'zsh')}
-                className="h-7 rounded-md border border-white/25 bg-[#121a2f] px-2 text-xs text-white outline-none"
-                title="Terminal shell"
+              <div
+                role="radiogroup"
+                aria-label="Terminal shell"
+                className="flex items-center gap-1 rounded-md border border-white/25 bg-[#121a2f] p-0.5"
               >
-                <option value="zsh">zsh</option>
-                <option value="bash">bash</option>
-              </select>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={selectedShell === 'zsh'}
+                  onClick={() => switchTerminalShell('zsh')}
+                  className={`h-6 rounded px-2 text-xs ${
+                    selectedShell === 'zsh'
+                      ? 'bg-white/20 text-white'
+                      : 'text-white/70 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  zsh
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={selectedShell === 'bash'}
+                  onClick={() => switchTerminalShell('bash')}
+                  className={`h-6 rounded px-2 text-xs ${
+                    selectedShell === 'bash'
+                      ? 'bg-white/20 text-white'
+                      : 'text-white/70 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  bash
+                </button>
+              </div>
               <Button
                 size="icon"
                 variant="ghost"
