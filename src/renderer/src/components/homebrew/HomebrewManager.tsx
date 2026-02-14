@@ -19,6 +19,13 @@ type BrewStatus = {
   installedAppCount: number | null
 }
 
+type NodeVersionItem = {
+  formula: string
+  installedVersion: string | null
+  installed: boolean
+  active: boolean
+}
+
 const APP_TOPBAR_REFRESH_EVENT = 'app:topbar-refresh'
 
 function HomebrewManager(): React.JSX.Element {
@@ -29,6 +36,9 @@ function HomebrewManager(): React.JSX.Element {
   const [cleanupToken, setCleanupToken] = useState('applite')
   const [runningCleanup, setRunningCleanup] = useState(false)
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null)
+  const [nodeVersions, setNodeVersions] = useState<NodeVersionItem[]>([])
+  const [loadingNodeVersions, setLoadingNodeVersions] = useState(false)
+  const [runningNodeFormula, setRunningNodeFormula] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const installLabel = useMemo(() => {
@@ -194,9 +204,108 @@ function HomebrewManager(): React.JSX.Element {
     }
   }
 
+  const loadNodeVersions = async (): Promise<void> => {
+    if (!status?.installed) {
+      setNodeVersions([])
+      return
+    }
+
+    setLoadingNodeVersions(true)
+    try {
+      const search = await executeCommandSilently("brew search '/^node(@[0-9]+)?$/'")
+      const nodeExecPathResult = await executeCommandSilently('node -p "process.execPath" 2>/dev/null || true')
+      const activeExecPath = nodeExecPathResult.stdout.trim()
+
+      const formulas = [...new Set(
+        search.stdout
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => /^node(?:@\d+)?$/.test(line))
+      )]
+
+      formulas.sort((a, b) => {
+        if (a === 'node') return -1
+        if (b === 'node') return 1
+        const aMajor = Number.parseInt(a.replace('node@', ''), 10)
+        const bMajor = Number.parseInt(b.replace('node@', ''), 10)
+        if (Number.isNaN(aMajor) || Number.isNaN(bMajor)) return a.localeCompare(b)
+        return bMajor - aMajor
+      })
+
+      const next: NodeVersionItem[] = []
+      for (const formula of formulas) {
+        const versionResult = await executeCommandSilently(`brew list --versions ${formula} 2>/dev/null || true`)
+        const tokens = versionResult.stdout.trim().split(/\s+/).filter(Boolean)
+        const installedVersion = tokens.length > 1 ? tokens[1] : null
+        const installed = installedVersion !== null
+        const active =
+          installed &&
+          activeExecPath.length > 0 &&
+          (activeExecPath.includes(`/Cellar/${formula}/`) ||
+            activeExecPath.includes(`/opt/homebrew/opt/${formula}/`) ||
+            activeExecPath.includes(`/usr/local/opt/${formula}/`))
+
+        next.push({
+          formula,
+          installedVersion,
+          installed,
+          active
+        })
+      }
+
+      setNodeVersions(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load Node versions.')
+    } finally {
+      setLoadingNodeVersions(false)
+    }
+  }
+
+  const runSwitchNodeVersion = async (targetFormula: string): Promise<void> => {
+    if (!status?.installed || runningNodeFormula) return
+    if (!/^node(?:@\d+)?$/.test(targetFormula)) {
+      setError(`Invalid Node formula: ${targetFormula}`)
+      return
+    }
+    setRunningNodeFormula(targetFormula)
+    setError(null)
+    try {
+      const unlinkTargets = nodeVersions
+        .map((item) => item.formula.trim())
+        .filter((formula) => /^node(?:@\d+)?$/.test(formula))
+      const target = nodeVersions.find((item) => item.formula === targetFormula)
+      const commands: string[] = []
+      if (!target?.installed) {
+        commands.push(`brew install ${targetFormula}`)
+      }
+      if (unlinkTargets.length > 0) {
+        commands.push(unlinkTargets.map((formula) => `brew unlink ${formula} >/dev/null 2>&1 || true`).join(' && '))
+      }
+      commands.push(`brew link --overwrite --force ${targetFormula}`)
+
+      const result = await executeWithGlobalTerminal(commands.join(' && '))
+      if (!result.success) {
+        setError(result.error || result.stderr || `Failed to switch to ${targetFormula}.`)
+        return
+      }
+      await window.api.syncInstalledAppsCache()
+      await refreshStatus()
+      await loadNodeVersions()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to switch to ${targetFormula}.`)
+    } finally {
+      setRunningNodeFormula(null)
+    }
+  }
+
   useEffect(() => {
     void loadStatus()
   }, [])
+
+  useEffect(() => {
+    void loadNodeVersions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.installed])
 
   useEffect(() => {
     const handler = (): void => {
@@ -357,6 +466,72 @@ function HomebrewManager(): React.JSX.Element {
           <Alert>
             <AlertDescription>{cleanupMessage}</AlertDescription>
           </Alert>
+        ) : null}
+
+        {status?.installed ? (
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-medium">Node Version Switch</h3>
+                <p className="text-xs text-muted-foreground">
+                  List Homebrew Node formulas and switch active version.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  void loadNodeVersions()
+                }}
+                disabled={loadingNodeVersions || runningNodeFormula !== null}
+              >
+                {loadingNodeVersions ? 'Loading...' : 'Refresh'}
+              </Button>
+            </div>
+
+            {loadingNodeVersions && nodeVersions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Loading Node versions...</p>
+            ) : nodeVersions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No Homebrew Node formulas found.</p>
+            ) : (
+              <ul className="divide-y rounded-md border">
+                {nodeVersions.map((item) => (
+                  <li key={item.formula} className="flex items-center justify-between gap-3 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-mono text-sm">{item.formula}</p>
+                        {item.active ? <Badge>Active</Badge> : null}
+                        <Badge variant={item.installed ? 'default' : 'secondary'}>
+                          {item.installed ? `Installed ${item.installedVersion ?? ''}`.trim() : 'Not Installed'}
+                        </Badge>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={item.active ? 'secondary' : 'default'}
+                      disabled={
+                        item.active ||
+                        runningNodeFormula !== null ||
+                        loadingNodeVersions ||
+                        loadingStatus ||
+                        runningAction !== null ||
+                        runningTerminalCommand
+                      }
+                      onClick={() => {
+                        void runSwitchNodeVersion(item.formula)
+                      }}
+                    >
+                      {runningNodeFormula === item.formula
+                        ? 'Switching...'
+                        : item.installed
+                          ? 'Switch'
+                          : 'Install & Switch'}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         ) : null}
 
         {error ? (
