@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Download,
   RefreshCw,
+  Trash2,
   XCircle
 } from 'lucide-react'
 
@@ -112,6 +113,7 @@ function MoleManager(): React.JSX.Element {
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [runningUpdate, setRunningUpdate] = useState(false)
   const [runningInstall, setRunningInstall] = useState(false)
+  const [runningClean, setRunningClean] = useState(false)
   const queryCommand = DEFAULT_QUERY_COMMAND
   const debugEnabled = false
   const [runningQuery, setRunningQuery] = useState(false)
@@ -203,6 +205,26 @@ function MoleManager(): React.JSX.Element {
       setError(err instanceof Error ? err.message : 'Mole install failed.')
     } finally {
       setRunningInstall(false)
+    }
+  }
+
+  const runClean = async (): Promise<void> => {
+    if (runningClean) return
+    setRunningClean(true)
+    setError(null)
+    try {
+      const result = await executeWithGlobalTerminal('mo clean')
+      if (!result.success) {
+        setError(result.error ?? 'Mole clean failed.')
+        return
+      }
+      await refreshStatus()
+      await window.api.syncInstalledAppsCache()
+      await runQuery()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Mole clean failed.')
+    } finally {
+      setRunningClean(false)
     }
   }
 
@@ -365,10 +387,23 @@ function MoleManager(): React.JSX.Element {
                   onClick={() => {
                     void loadStatus()
                   }}
-                  disabled={loadingStatus || runningUpdate || runningInstall}
+                  disabled={loadingStatus || runningUpdate || runningInstall || runningClean}
                 >
                   <RefreshCw className={`h-4 w-4 ${loadingStatus ? 'animate-spin' : ''}`} />
                   Refresh Status
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    void runClean()
+                  }}
+                  disabled={
+                    loadingStatus || runningUpdate || runningInstall || runningClean || !status?.installed
+                  }
+                >
+                  <Trash2 className={`h-4 w-4 ${runningClean ? 'animate-pulse' : ''}`} />
+                  {runningClean ? 'Cleaning...' : 'mo clean'}
                 </Button>
                 <Button
                   size="sm"
@@ -379,7 +414,7 @@ function MoleManager(): React.JSX.Element {
                       void runInstall()
                     }
                   }}
-                  disabled={loadingStatus || runningUpdate || runningInstall}
+                  disabled={loadingStatus || runningUpdate || runningInstall || runningClean}
                 >
                   {status?.installed ? <ArrowUpCircle className="h-4 w-4" /> : <Download className="h-4 w-4" />}
                   {status?.installed
