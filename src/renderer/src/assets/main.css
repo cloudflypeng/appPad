@@ -65,6 +65,23 @@
   --sidebar-accent-foreground: hsl(240 5.9% 10%);
   --sidebar-border: hsl(220 13% 91%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  --app-font-sans:
+    'SF Pro Text',
+    'SF Pro Display',
+    'Avenir Next',
+    'Segoe UI Variable',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Noto Sans CJK SC',
+    system-ui,
+    sans-serif;
+  --app-font-mono:
+    'JetBrains Mono',
+    'SF Mono',
+    'Cascadia Code',
+    'Fira Code',
+    ui-monospace,
+    monospace;
 }
 
 .dark {
@@ -103,6 +120,12 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--app-font-sans);
+    font-feature-settings:
+      'ss01' 1,
+      'cv11' 1,
+      'tnum' 1;
+    letter-spacing: 0.01em;
   }
 }
 
@@ -111,9 +134,10 @@ body {
   min-height: 100vh;
   color: var(--foreground);
   background-color: var(--background);
-  background-image: url('./wavy-lines.svg');
-  background-size: cover;
-  background-position: center;
+  background-image:
+    radial-gradient(circle at 14% -6%, oklch(0.985 0.01 245 / 0.55), transparent 44%),
+    linear-gradient(180deg, oklch(0.998 0 0), oklch(0.992 0 0));
+  background-attachment: fixed;
 }
 
 code {
@@ -121,14 +145,7 @@ code {
   padding: 3px 5px;
   border-radius: 2px;
   background-color: var(--color-background-mute);
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    SF Mono,
-    Menlo,
-    Consolas,
-    Liberation Mono,
-    monospace;
+  font-family: var(--app-font-mono);
   font-size: 85%;
 }
 

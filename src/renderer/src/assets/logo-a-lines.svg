@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="APPAD logo">
+  <defs>
+    <linearGradient id="apppad-logo-bg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563EB" />
+      <stop offset="1" stop-color="#0891B2" />
+    </linearGradient>
+    <clipPath id="apppad-logo-a">
+      <path d="M32 14 48 50h-8l-3.2-8h-9.6L24 50h-8zM29.6 35h4.8L32 29z" />
+    </clipPath>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#apppad-logo-bg)" />
+  <g clip-path="url(#apppad-logo-a)">
+    <rect x="16" y="16" width="32" height="3.2" rx="1.6" fill="white" fill-opacity="0.98" />
+    <rect x="16" y="21.5" width="32" height="3.2" rx="1.6" fill="white" fill-opacity="0.98" />
+    <rect x="16" y="27" width="32" height="3.2" rx="1.6" fill="white" fill-opacity="0.98" />
+    <rect x="16" y="32.5" width="32" height="3.2" rx="1.6" fill="white" fill-opacity="0.98" />
+    <rect x="16" y="38" width="32" height="3.2" rx="1.6" fill="white" fill-opacity="0.98" />
+    <rect x="16" y="43.5" width="32" height="3.2" rx="1.6" fill="white" fill-opacity="0.98" />
+    <rect x="16" y="49" width="32" height="3.2" rx="1.6" fill="white" fill-opacity="0.98" />
+  </g>
+</svg>

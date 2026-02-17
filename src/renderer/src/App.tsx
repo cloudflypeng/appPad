@@ -1,4 +1,4 @@
-import { type CSSProperties, useRef, useState } from 'react'
+import { useState } from 'react'
 import {
   ArrowUpCircle,
   Compass,
@@ -24,6 +24,7 @@ import TerminalManager from '@/components/terminal/TerminalManager'
 import ToolsManager from '@/components/tools/ToolsManager'
 import AppUpdateManager from '@/components/update/AppUpdateManager'
 import { Button } from '@/components/ui/button'
+import appadLogoPng from '@/assets/logo-a-lines.png'
 import {
   Sidebar,
   SidebarContent,
@@ -55,8 +56,6 @@ function App(): React.JSX.Element {
     | 'appUpdate'
   >('homebrew')
   const [syncingInstalledApps, setSyncingInstalledApps] = useState(false)
-  const insetContentRef = useRef<HTMLDivElement | null>(null)
-
   const navigationTabs = [
     {
       key: 'installed' as const,
@@ -134,26 +133,33 @@ function App(): React.JSX.Element {
 
   return (
     <SidebarProvider>
-      <div
-        className="fixed inset-x-0 top-0 z-[60] h-8"
-        style={{ WebkitAppRegion: 'drag' } as CSSProperties}
-      />
-      <Sidebar className="select-none">
-        <SidebarHeader className="px-3 pt-10">
-          <div className="mr-8 text-3xl">APPAD</div>
+      <Sidebar collapsible="icon" className="select-none">
+        <SidebarHeader className="px-3 pt-10 group-data-[collapsible=icon]:px-1.5">
+          <div className="flex w-full items-center gap-2 overflow-hidden rounded-lg px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0">
+            <div className="size-8 shrink-0">
+              <img src={appadLogoPng} alt="APPAD logo" className="h-full w-full rounded-md" />
+            </div>
+            <div className="min-w-0 transition-all duration-300 group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0">
+              <p className="text-[13px] font-semibold tracking-[0.06em]">APPAD</p>
+              <p className="text-sidebar-foreground/58 text-[10px] leading-tight tracking-[0.03em]">
+                Software Console
+              </p>
+            </div>
+          </div>
         </SidebarHeader>
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-3 text-[11px] uppercase tracking-[0.08em]">
+          <SidebarGroup className="group-data-[collapsible=icon]:px-1">
+            <SidebarGroupLabel className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em]">
               Navigation
             </SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu className="space-y-1 px-2">
+              <SidebarMenu className="space-y-1 px-2 group-data-[collapsible=icon]:px-1">
                 {navigationTabs.map((tab) => (
                   <SidebarMenuItem key={tab.key}>
                     <SidebarMenuButton
-                      className="h-9 rounded-lg px-3 text-[13px] font-medium"
+                      className="h-8 rounded-lg px-3 text-[12px] font-medium transition-all duration-300 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
                       isActive={activeTab === tab.key}
+                      tooltip={tab.title}
                       onClick={() => setActiveTab(tab.key)}
                     >
                       <tab.icon />
@@ -164,17 +170,18 @@ function App(): React.JSX.Element {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-3 text-[11px] uppercase tracking-[0.08em]">
+          <SidebarGroup className="group-data-[collapsible=icon]:px-1">
+            <SidebarGroupLabel className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em]">
               Updates
             </SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu className="space-y-1 px-2">
+              <SidebarMenu className="space-y-1 px-2 group-data-[collapsible=icon]:px-1">
                 {updateTabs.map((tab) => (
                   <SidebarMenuItem key={tab.key}>
                     <SidebarMenuButton
-                      className="h-9 rounded-lg px-3 text-[13px] font-medium"
+                      className="h-8 rounded-lg px-3 text-[12px] font-medium transition-all duration-300 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
                       isActive={activeTab === tab.key}
+                      tooltip={tab.title}
                       onClick={() => setActiveTab(tab.key)}
                     >
                       <tab.icon />
@@ -186,33 +193,33 @@ function App(): React.JSX.Element {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter className="px-3 pb-3">
+        <SidebarFooter className="px-3 pb-3 group-data-[collapsible=icon]:px-1.5">
           <Button
             variant="secondary"
-            className="h-9 w-full justify-start gap-2 rounded-lg text-[13px] font-medium"
+            className="h-8 w-full justify-start gap-2 overflow-hidden rounded-lg px-3 text-[12px] font-medium transition-all duration-300 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
             onClick={() => {
               void handleRefreshInstalledState()
             }}
             disabled={syncingInstalledApps}
+            title="Refresh Install Status"
+            aria-label="Refresh Install Status"
           >
             {syncingInstalledApps ? (
               <LoaderCircle className="h-4 w-4 animate-spin" />
             ) : (
               <RefreshCw className="h-4 w-4" />
             )}
-            <span>{syncingInstalledApps ? 'Refreshing...' : 'Refresh Install Status'}</span>
+            <span className="truncate transition-all duration-300 group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0">
+              {syncingInstalledApps ? 'Refreshing...' : 'Refresh Install Status'}
+            </span>
           </Button>
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className="pt-8">
-        <div ref={insetContentRef} className="relative flex-1">
-          <FixedTopBar
-            title={activeTitle}
-            description={activeDescription}
-            containerRef={insetContentRef}
-          />
-          <div className="pt-10">
+      <SidebarInset>
+        <div className="relative flex-1">
+          <FixedTopBar title={activeTitle} description={activeDescription} />
+          <div>
             {activeTab === 'homebrew' ? <HomebrewManager /> : null}
             {activeTab === 'browser' ? <BrowserCatalog /> : null}
             {activeTab === 'terminal' ? <TerminalManager /> : null}
