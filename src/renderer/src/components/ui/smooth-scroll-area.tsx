@@ -84,7 +84,7 @@ function SmoothScrollArea({
       ref={containerRef}
       data-slot="smooth-scroll-area"
       className={cn(
-        'overflow-x-hidden overflow-y-auto overscroll-contain [scrollbar-gutter:stable]',
+        'overflow-x-hidden overflow-y-auto overscroll-contain [scrollbar-gutter:auto]',
         className
       )}
       {...props}

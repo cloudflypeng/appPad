@@ -231,20 +231,20 @@ function App(): React.JSX.Element {
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_130%_at_30%_2%,rgba(255,255,255,0.08)_0%,rgba(255,255,255,0.03)_36%,rgba(17,17,19,0)_68%)]" />
               <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.45)_0%,rgba(0,0,0,0.16)_16%,rgba(0,0,0,0.04)_50%,rgba(0,0,0,0.16)_84%,rgba(0,0,0,0.45)_100%)]" />
               <div className="pointer-events-none absolute inset-0 opacity-[0.14] [background-image:radial-gradient(rgba(255,255,255,0.22)_0.4px,transparent_0.4px)] [background-size:3px_3px]" />
-              <SmoothScrollArea className="relative z-10 h-[90vh] min-h-0 flex-1 bg-gradient-to-b from-[#161618]/70 via-[#151517]/35 to-[#101012]/72">
-                <div className="sticky top-0 z-10 rounded-t-2xl border-b border-white/[0.09] bg-gradient-to-b from-[#1a1a1c]/92 to-[#121214]/84 px-4 pb-2 pt-6 backdrop-blur-xl">
-                  <div className="flex items-center gap-2">
-                    <SidebarTrigger className="text-muted-foreground hover:text-foreground size-7 rounded-md border border-border/60 bg-background transition-[color,background-color,border-color] duration-200 hover:bg-accent" />
-                    <div>
-                      <p className="text-muted-foreground text-[9px] font-medium uppercase tracking-[0.12em]">
-                        Workspace
-                      </p>
-                      <h1 className="pt-1 text-[15px] font-semibold leading-none tracking-[-0.01em]">
-                        {activeTitle}
-                      </h1>
-                    </div>
+              <div className="sticky top-0 z-10 rounded-t-2xl border-b border-white/[0.09] bg-gradient-to-b from-[#1a1a1c]/92 to-[#121214]/84 px-4 pb-2 pt-6 backdrop-blur-xl">
+                <div className="flex items-center gap-2">
+                  <SidebarTrigger className="text-muted-foreground hover:text-foreground size-7 rounded-md border border-border/60 bg-background transition-[color,background-color,border-color] duration-200 hover:bg-accent" />
+                  <div>
+                    <p className="text-muted-foreground text-[9px] font-medium uppercase tracking-[0.12em]">
+                      Workspace
+                    </p>
+                    <h1 className="pt-1 text-[15px] font-semibold leading-none tracking-[-0.01em]">
+                      {activeTitle}
+                    </h1>
                   </div>
                 </div>
+              </div>
+              <SmoothScrollArea className="relative z-10 h-[90vh] min-h-0 flex-1 bg-gradient-to-b from-[#161618]/70 via-[#151517]/35 to-[#101012]/72">
                 {activeTab === 'homebrew' ? <HomebrewManager /> : null}
                 {activeTab === 'browser' ? <BrowserCatalog /> : null}
                 {activeTab === 'terminal' ? <TerminalManager /> : null}
