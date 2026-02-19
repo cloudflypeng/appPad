@@ -612,8 +612,8 @@ function GlobalTerminalPanel(): React.JSX.Element {
       {!expanded ? (
         <Button
           size="icon"
-          variant="outline"
-          className="fixed bottom-6 right-6 z-50 h-10 w-10 rounded-full border-white/[0.14] bg-[#121214]/92 text-zinc-100 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-[#1b1b1f] hover:text-white"
+          variant="ghost"
+          className="fixed bottom-6 right-6 z-50 h-10 w-10 rounded-full border-0 bg-[#121214]/92 text-zinc-100 shadow-xl shadow-black/45 backdrop-blur-md hover:bg-[#1b1b1f] hover:text-white"
           onClick={openPanel}
           title="Open terminal"
         >
@@ -625,7 +625,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
           expanded ? 'translate-x-0' : 'translate-x-[calc(100%+3rem)]'
         }`}
       >
-        <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#111113]/96 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+        <div className="overflow-hidden rounded-xl bg-[#111113]/95 shadow-2xl shadow-black/50 backdrop-blur-xl">
           <div className="flex h-10 items-center justify-between border-b border-white/[0.08] bg-gradient-to-b from-[#1a1a1d]/72 to-[#131316]/58 px-3 text-zinc-100">
             <div className="flex items-center gap-2 text-sm">
               <TerminalSquare className="h-4 w-4" />
@@ -635,7 +635,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
               <div
                 role="radiogroup"
                 aria-label="Terminal shell"
-                className="flex items-center gap-1 rounded-md border border-white/[0.12] bg-[#17171a] p-0.5"
+                className="flex items-center gap-1 rounded-md bg-[#17171a] p-0.5"
               >
                 <button
                   type="button"

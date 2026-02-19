@@ -22,6 +22,28 @@ type MoleStatus = {
   installMethod: string | null
 }
 
+type NodeVersionCacheItem = {
+  formula: string
+  installedVersion: string | null
+  installed: boolean
+  active: boolean
+}
+
+type MoleUninstallCandidate = {
+  name: string
+  size: string | null
+  lastUsed: string | null
+  uninstallSource: 'brew' | 'mole'
+  uninstallCommand: string
+}
+
+type MoleUninstallAppsCache = {
+  rows: MoleUninstallCandidate[]
+  rawOutput: string
+  queryCommand: string
+  error: string | null
+}
+
 type CachedStatusPayload<T> = {
   status: T | null
   updatedAt: number | null
@@ -137,6 +159,10 @@ type AppAPI = {
   refreshBrewStatusCache: () => Promise<CachedStatusPayload<BrewStatus>>
   getCachedMoleStatus: () => Promise<CachedStatusPayload<MoleStatus>>
   refreshMoleStatusCache: () => Promise<CachedStatusPayload<MoleStatus>>
+  getCachedNodeVersions: () => Promise<CachedStatusPayload<NodeVersionCacheItem[]>>
+  refreshNodeVersionsCache: () => Promise<CachedStatusPayload<NodeVersionCacheItem[]>>
+  getCachedMoleUninstallApps: () => Promise<CachedStatusPayload<MoleUninstallAppsCache>>
+  refreshMoleUninstallAppsCache: () => Promise<CachedStatusPayload<MoleUninstallAppsCache>>
   checkForUpdates: () => Promise<{
     success: boolean
     updateAvailable: boolean

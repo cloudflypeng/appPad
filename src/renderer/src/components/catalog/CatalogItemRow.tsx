@@ -1,5 +1,5 @@
 import { type ComponentType } from 'react'
-import { Download, Globe, RefreshCw } from 'lucide-react'
+import { Download, Globe, RefreshCw, TerminalSquare } from 'lucide-react'
 import {
   SiArc,
   SiArcHex,
@@ -24,6 +24,7 @@ import {
 import { CatalogItem } from '@/lib/catalog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 type IconConfig = {
   Component: ComponentType<{
@@ -68,17 +69,35 @@ function CatalogItemRow({
   onUpdate
 }: CatalogItemRowProps): React.JSX.Element {
   const icon = item.iconKey ? ICON_MAP[item.iconKey] : undefined
+  const actionIconButtonClass =
+    'h-7 w-7 border-0 bg-transparent text-zinc-300 transition-colors hover:bg-white/[0.07] hover:text-white'
+  const toggleLabel = running
+    ? item.installed
+      ? 'Uninstalling...'
+      : 'Installing...'
+    : item.installed
+      ? 'Uninstall'
+      : 'Install'
+  const command = item.installed
+    ? (item.updateCommand ??
+      (item.brewType === 'cask'
+        ? `brew upgrade --cask ${item.token}`
+        : `brew upgrade ${item.token}`))
+    : (item.installCommand ??
+      (item.brewType === 'cask'
+        ? `brew install --cask ${item.token}`
+        : `brew install ${item.token}`))
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-white/[0.08] bg-gradient-to-b from-[#171719]/88 to-[#101012]/92 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_24px_rgba(0,0,0,0.3)] md:flex-row md:items-center md:justify-between">
-      <div className="flex min-w-0 items-center gap-3">
+    <div className="flex flex-col gap-2 rounded-lg px-3 py-2 md:flex-row md:items-center md:justify-between">
+      <div className="flex min-w-0 items-center gap-2.5">
         {icon ? (
-          <icon.Component size={40} color={icon.color} className="mt-0.5 shrink-0" />
+          <icon.Component size={32} color={icon.color} className="shrink-0" />
         ) : item.iconUrl ? (
           <img
             src={item.iconUrl}
             alt={`${item.name} icon`}
-            className="mt-0.5 h-10 w-10 shrink-0"
+            className="h-8 w-8 shrink-0"
             onError={(event) => {
               const el = event.currentTarget
               if (el.dataset.fallbackTried !== '1' && item.fallbackIconUrl) {
@@ -91,72 +110,89 @@ function CatalogItemRow({
             }}
           />
         ) : (
-          <Globe className="mt-0.5 h-8 w-8 shrink-0 text-muted-foreground" />
+          <Globe className="h-7 w-7 shrink-0 text-muted-foreground" />
         )}
 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium text-zinc-100">{item.name}</p>
+            <p className="text-[13px] font-medium text-zinc-100">{item.name}</p>
             <Badge
-              variant="outline"
+              variant="secondary"
               className={
                 item.installed
-                  ? 'border-white/18 bg-white/[0.08] text-zinc-100'
-                  : 'border-white/12 bg-transparent text-zinc-400'
+                  ? 'bg-transparent px-1.5 py-0 text-[10px] text-zinc-100'
+                  : 'bg-transparent px-1.5 py-0 text-[10px] text-zinc-300'
               }
             >
               {item.installed ? 'Installed' : 'Not Installed'}
             </Badge>
             {item.installed && item.hasUpdate ? (
-              <Badge variant="outline" className="border-white/18 bg-white/[0.08] text-zinc-200">
+              <Badge
+                variant="secondary"
+                className="bg-transparent px-1.5 py-0 text-[10px] text-zinc-200"
+              >
                 Update Available
               </Badge>
             ) : null}
           </div>
-          <p className="mt-1 text-xs text-zinc-400">{item.description}</p>
-          <p className="mt-2 rounded-md border border-white/[0.06] bg-black/20 px-2 py-1 font-mono text-xs text-zinc-400">
-            {item.installed
-              ? (item.updateCommand ??
-                (item.brewType === 'cask'
-                  ? `brew upgrade --cask ${item.token}`
-                  : `brew upgrade ${item.token}`))
-              : (item.installCommand ??
-                (item.brewType === 'cask'
-                  ? `brew install --cask ${item.token}`
-                  : `brew install ${item.token}`))}
-          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-zinc-400">{item.description}</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className={actionIconButtonClass}
+              title="Show command"
+              aria-label="Show command"
+            >
+              <TerminalSquare className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent sideOffset={8} className="max-w-[460px]">
+            <p className="font-mono text-[11px]">{command}</p>
+          </TooltipContent>
+        </Tooltip>
         {item.installed && onUpdate ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-white/12 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.1] hover:text-white"
-            onClick={() => onUpdate(item)}
-            disabled={disabled}
-          >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            {updating ? 'Updating...' : 'Update'}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                className={actionIconButtonClass}
+                onClick={() => onUpdate(item)}
+                disabled={disabled}
+                aria-label={updating ? 'Updating...' : 'Update'}
+              >
+                <RefreshCw className={`h-4 w-4 ${updating ? 'animate-spin' : ''}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent sideOffset={8}>
+              <p>{updating ? 'Updating...' : 'Update'}</p>
+            </TooltipContent>
+          </Tooltip>
         ) : null}
-        <Button
-          size="sm"
-          variant="outline"
-          className="border-white/18 bg-white/[0.08] text-zinc-100 hover:bg-white/[0.14] hover:text-white"
-          onClick={() => onToggle(item)}
-          disabled={disabled}
-        >
-          <Download className="mr-2 h-4 w-4" />
-          {running
-            ? item.installed
-              ? 'Uninstalling...'
-              : 'Installing...'
-            : item.installed
-              ? 'Uninstall'
-              : 'Install'}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className={actionIconButtonClass}
+              onClick={() => onToggle(item)}
+              disabled={disabled}
+              aria-label={toggleLabel}
+            >
+              <Download className={`h-4 w-4 ${running ? 'animate-pulse' : ''}`} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent sideOffset={8}>
+            <p>{toggleLabel}</p>
+          </TooltipContent>
+        </Tooltip>
       </div>
     </div>
   )

@@ -91,9 +91,9 @@ function AppUpdateManager(): React.JSX.Element {
 
   return (
     <main className="px-6 py-6 md:px-8 md:py-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-        <div className="overflow-hidden rounded-md border">
-          <div className="flex items-center justify-between gap-3 border-b bg-background px-4 py-3">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
+        <div className="divide-y divide-white/[0.06]">
+          <div className="flex items-center justify-between gap-3 py-2.5">
             <div>
               <p className="text-sm font-medium">Application Update</p>
               <p className="text-xs text-muted-foreground">
@@ -107,7 +107,7 @@ function AppUpdateManager(): React.JSX.Element {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-b bg-background px-4 py-3">
+          <div className="flex items-center justify-between gap-3 py-2.5">
             <div>
               <p className="text-sm font-medium">Current Version</p>
               <p className="text-xs text-muted-foreground">Installed version on this machine</p>
@@ -115,7 +115,7 @@ function AppUpdateManager(): React.JSX.Element {
             <p className="font-mono text-sm">{info?.currentVersion ?? 'Unknown'}</p>
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-b bg-background px-4 py-3">
+          <div className="flex items-center justify-between gap-3 py-2.5">
             <div>
               <p className="text-sm font-medium">Latest Version</p>
               <p className="text-xs text-muted-foreground">Latest version from update feed</p>
@@ -123,7 +123,7 @@ function AppUpdateManager(): React.JSX.Element {
             <p className="font-mono text-sm">{info?.latestVersion ?? 'Unknown'}</p>
           </div>
 
-          <div className="flex items-center justify-between gap-3 bg-background px-4 py-3">
+          <div className="flex items-start justify-between gap-3 py-2.5">
             <div>
               <p className="text-sm font-medium">Action</p>
               <p className="text-xs text-muted-foreground">
@@ -163,11 +163,11 @@ function AppUpdateManager(): React.JSX.Element {
         </div>
 
         {info?.releaseNotes ? (
-          <div className="overflow-hidden rounded-md border bg-background">
-            <div className="border-b px-4 py-3">
+          <div className="space-y-1.5">
+            <div className="py-1">
               <p className="text-sm font-medium">Release Notes</p>
             </div>
-            <div className="px-4 py-3">
+            <div className="rounded-md border border-white/[0.06] p-3">
               <pre className="whitespace-pre-wrap text-xs text-muted-foreground">{info.releaseNotes}</pre>
             </div>
           </div>

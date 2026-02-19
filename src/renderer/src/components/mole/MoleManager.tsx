@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
   ArrowUpCircle,
@@ -12,6 +12,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { executeWithGlobalTerminal } from '@/lib/globalTerminal'
 
 type UninstallCandidate = {
@@ -28,84 +29,13 @@ type MoleStatus = {
   installMethod: string | null
 }
 
-const DEFAULT_QUERY_COMMAND = 'mo uninstall'
 const MOLE_INSTALL_COMMAND = 'brew install mole'
 
-function toNonBlockingQueryCommand(command: string): string {
-  const trimmed = command.trim()
-  if (!trimmed) return trimmed
-  const normalized = trimmed.toLowerCase()
-  if (normalized.startsWith('mo uninstall')) {
-    return `printf 'q\\n' | (${trimmed})`
-  }
-  return trimmed
-}
-
-function normalizeAppToken(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
-}
-
-function stripAnsiAndControl(text: string): string {
-  return text
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\x1b[@-_]/g, '')
-}
-
-function parseUninstallCandidates(output: string): {
-  rows: Array<Pick<UninstallCandidate, 'name' | 'size' | 'lastUsed'>>
-  selected: number | null
-  total: number | null
-} {
-  const normalized = stripAnsiAndControl(output).replace(/\r/g, '\n')
-  const lines = normalized
-    .split('\n')
-    .map((line) => line.trimEnd())
-    .filter(Boolean)
-
-  const headerIndex = lines
-    .map((line, index) => ({ line, index }))
-    .filter((item) => item.line.includes('Select Apps to Remove'))
-    .at(-1)?.index
-
-  const scanLines = headerIndex !== undefined ? lines.slice(headerIndex) : lines
-  const headerLine = scanLines.find((line) => line.includes('selected')) ?? ''
-  const selectedMatch = headerLine.match(/(\d+)\/(\d+)\s+selected/i)
-
-  const byName = new Map<string, Pick<UninstallCandidate, 'name' | 'size' | 'lastUsed'>>()
-  for (const rawLine of scanLines) {
-    const line = rawLine.trim()
-    const detailed = line.match(/^(?:➤\s*)?○\s+(.+?)\s{2,}(.+?)\s*\|\s*(.+)$/)
-    if (detailed) {
-      const name = detailed[1].trim()
-      const size = detailed[2].trim()
-      const lastUsed = detailed[3].trim()
-      byName.set(name, {
-        name,
-        size: size === '...' ? null : size,
-        lastUsed: lastUsed === '...' ? null : lastUsed
-      })
-      continue
-    }
-
-    const simple = line.match(/^(?:➤\s*)?○\s+(.+)$/)
-    if (simple) {
-      const name = simple[1].trim()
-      if (!name || name.includes('|') || name.includes('selected')) continue
-      byName.set(name, { name, size: null, lastUsed: null })
-    }
-  }
-
-  const rows = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
-  return {
-    rows,
-    selected: selectedMatch ? Number.parseInt(selectedMatch[1], 10) : null,
-    total: selectedMatch ? Number.parseInt(selectedMatch[2], 10) : null
-  }
+type MoleUninstallAppsCache = {
+  rows: UninstallCandidate[]
+  rawOutput: string
+  queryCommand: string
+  error: string | null
 }
 
 function MoleManager(): React.JSX.Element {
@@ -114,21 +44,13 @@ function MoleManager(): React.JSX.Element {
   const [runningUpdate, setRunningUpdate] = useState(false)
   const [runningInstall, setRunningInstall] = useState(false)
   const [runningClean, setRunningClean] = useState(false)
-  const queryCommand = DEFAULT_QUERY_COMMAND
-  const debugEnabled = false
   const [runningQuery, setRunningQuery] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [rows, setRows] = useState<UninstallCandidate[]>([])
   const [lastRawOutput, setLastRawOutput] = useState<string>('')
   const [runningUninstallApp, setRunningUninstallApp] = useState<string | null>(null)
-
-  const effectiveQueryCommand = useMemo(() => {
-    const trimmed = queryCommand.trim()
-    if (!trimmed) return DEFAULT_QUERY_COMMAND
-    const commandWithDebug =
-      !debugEnabled || trimmed.includes('--debug') ? trimmed : `${trimmed} --debug`
-    return toNonBlockingQueryCommand(commandWithDebug)
-  }, [debugEnabled, queryCommand])
+  const actionIconButtonClass =
+    'h-7 w-7 border-0 bg-transparent text-zinc-300 transition-colors hover:bg-white/[0.07] hover:text-white'
 
   const refreshStatus = async (showLoading = false): Promise<void> => {
     if (showLoading) setLoadingStatus(true)
@@ -220,7 +142,7 @@ function MoleManager(): React.JSX.Element {
       }
       await refreshStatus()
       await window.api.syncInstalledAppsCache()
-      await runQuery()
+      await runQuery(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Mole clean failed.')
     } finally {
@@ -228,65 +150,43 @@ function MoleManager(): React.JSX.Element {
     }
   }
 
-  const runQuery = async (): Promise<void> => {
+  const applyMoleUninstallAppsCache = (cache: MoleUninstallAppsCache): void => {
+    setRows(cache.rows)
+    setLastRawOutput(cache.rawOutput ?? '')
+    setError(cache.error ?? null)
+  }
+
+  const runQuery = async (forceRefresh = false): Promise<void> => {
     if (runningQuery) return
 
     setRunningQuery(true)
-    setError(null)
-
+    if (forceRefresh || rows.length === 0) {
+      setError(null)
+    }
+    let hasCached = false
     try {
-      const result = await window.api.executeTerminalCommand(effectiveQueryCommand)
-      const mixedOutput = [result.stdout, result.stderr].filter(Boolean).join('\n')
-      setLastRawOutput(mixedOutput)
-
-      if (!mixedOutput.trim()) {
-        setRows([])
-        if (!result.success) {
-          setError(result.error ?? 'Query command failed.')
+      if (!forceRefresh) {
+        const cached = await window.api.getCachedMoleUninstallApps()
+        if (cached.status) {
+          hasCached = true
+          applyMoleUninstallAppsCache(cached.status)
         }
-        return
       }
 
-      const parsed = parseUninstallCandidates(mixedOutput)
-      const installedCache = await window.api.getCatalogItemsCache('installed')
-      const brewTokenMap = new Map<string, string>()
-      installedCache.items
-        .filter((item) => item.installed)
-        .forEach((item) => {
-          const token = item.token.trim()
-          if (!token) return
-          brewTokenMap.set(normalizeAppToken(token), token)
-          if (item.name?.trim()) {
-            brewTokenMap.set(normalizeAppToken(item.name), token)
-          }
-        })
-
-      const nextRows: UninstallCandidate[] = parsed.rows.map((row) => {
-        const matchedBrewToken = brewTokenMap.get(normalizeAppToken(row.name))
-        if (matchedBrewToken) {
-          return {
-            ...row,
-            uninstallSource: 'brew',
-            uninstallCommand: `brew uninstall --cask ${shellQuote(matchedBrewToken)}`
-          }
-        }
-        return {
-          ...row,
-          uninstallSource: 'mole',
-          uninstallCommand: `mo uninstall ${row.name}`
-        }
-      })
-
-      setRows(nextRows)
-
-      if (!result.success) {
-        setError(result.error ?? 'Query command exited with a non-zero status.')
-      } else if (parsed.rows.length === 0) {
-        setError('Command completed, but no uninstallable apps were parsed. Adjust the query command.')
+      const refreshed = await window.api.refreshMoleUninstallAppsCache()
+      if (refreshed.status) {
+        applyMoleUninstallAppsCache(refreshed.status)
+      } else if (!hasCached) {
+        setRows([])
+        setLastRawOutput('')
+        setError(null)
       }
     } catch (err) {
-      setRows([])
-      setError(err instanceof Error ? err.message : 'Query failed.')
+      if (!hasCached) {
+        setRows([])
+        setLastRawOutput('')
+      }
+      setError(err instanceof Error ? err.message : 'Failed to refresh Mole app cache.')
     } finally {
       setRunningQuery(false)
     }
@@ -308,7 +208,7 @@ function MoleManager(): React.JSX.Element {
         return
       }
       await window.api.syncInstalledAppsCache()
-      await runQuery()
+      await runQuery(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to uninstall ${row.name}.`)
     } finally {
@@ -327,14 +227,14 @@ function MoleManager(): React.JSX.Element {
 
   return (
     <main className="px-6 py-6 md:px-8 md:py-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
         <section className="space-y-2">
           <div className="px-1">
             <h2 className="text-base font-semibold">Mole Installation</h2>
             <p className="text-sm text-muted-foreground">Detect Mole installation status and run update.</p>
           </div>
-          <div className="overflow-hidden rounded-md border">
-            <div className="flex items-center justify-between gap-3 border-b bg-background px-4 py-3">
+          <div className="divide-y divide-white/[0.06]">
+            <div className="flex items-center justify-between gap-3 py-2.5">
               <div>
                 <p className="text-sm font-medium">Installation</p>
                 <p className="text-xs text-muted-foreground">Mole command availability</p>
@@ -351,7 +251,7 @@ function MoleManager(): React.JSX.Element {
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-3 border-b bg-background px-4 py-3">
+            <div className="flex items-center justify-between gap-3 py-2.5">
               <div>
                 <p className="text-sm font-medium">Current Version</p>
                 <p className="text-xs text-muted-foreground">Detected local Mole version</p>
@@ -361,7 +261,7 @@ function MoleManager(): React.JSX.Element {
               </p>
             </div>
 
-            <div className="flex items-center justify-between gap-3 border-b bg-background px-4 py-3">
+            <div className="flex items-center justify-between gap-3 py-2.5">
               <div>
                 <p className="text-sm font-medium">Install Method</p>
                 <p className="text-xs text-muted-foreground">Source reported by Mole</p>
@@ -371,7 +271,7 @@ function MoleManager(): React.JSX.Element {
               </p>
             </div>
 
-            <div className="flex items-center justify-between gap-3 bg-background px-4 py-3">
+            <div className="flex items-start justify-between gap-3 py-2.5">
               <div>
                 <p className="text-sm font-medium">Action</p>
                 <p className="text-xs text-muted-foreground">
@@ -380,51 +280,96 @@ function MoleManager(): React.JSX.Element {
                     : 'Install Mole first, then you can update and manage apps.'}
                 </p>
               </div>
-              <div className="shrink-0 flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    void loadStatus()
-                  }}
-                  disabled={loadingStatus || runningUpdate || runningInstall || runningClean}
-                >
-                  <RefreshCw className={`h-4 w-4 ${loadingStatus ? 'animate-spin' : ''}`} />
-                  Refresh Status
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    void runClean()
-                  }}
-                  disabled={
-                    loadingStatus || runningUpdate || runningInstall || runningClean || !status?.installed
-                  }
-                >
-                  <Trash2 className={`h-4 w-4 ${runningClean ? 'animate-pulse' : ''}`} />
-                  {runningClean ? 'Cleaning...' : 'mo clean'}
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (status?.installed) {
-                      void runUpdate()
-                    } else {
-                      void runInstall()
-                    }
-                  }}
-                  disabled={loadingStatus || runningUpdate || runningInstall || runningClean}
-                >
-                  {status?.installed ? <ArrowUpCircle className="h-4 w-4" /> : <Download className="h-4 w-4" />}
-                  {status?.installed
-                    ? runningUpdate
-                      ? 'Updating...'
-                      : 'Update Mole'
-                    : runningInstall
-                      ? 'Installing...'
-                      : 'Install Mole'}
-                </Button>
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      className={actionIconButtonClass}
+                      onClick={() => {
+                        void loadStatus()
+                      }}
+                      disabled={loadingStatus || runningUpdate || runningInstall || runningClean}
+                      aria-label={loadingStatus ? 'Refreshing status...' : 'Refresh status'}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${loadingStatus ? 'animate-spin' : ''}`} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8}>
+                    <p>{loadingStatus ? 'Refreshing status...' : 'Refresh status'}</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      className={actionIconButtonClass}
+                      onClick={() => {
+                        void runClean()
+                      }}
+                      disabled={
+                        loadingStatus || runningUpdate || runningInstall || runningClean || !status?.installed
+                      }
+                      aria-label={runningClean ? 'Cleaning...' : 'mo clean'}
+                    >
+                      <Trash2 className={`h-4 w-4 ${runningClean ? 'animate-pulse' : ''}`} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8}>
+                    <p>{runningClean ? 'Cleaning...' : 'mo clean'}</p>
+                    <p className="font-mono text-[11px]">mo clean</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      className={actionIconButtonClass}
+                      onClick={() => {
+                        if (status?.installed) {
+                          void runUpdate()
+                        } else {
+                          void runInstall()
+                        }
+                      }}
+                      disabled={loadingStatus || runningUpdate || runningInstall || runningClean}
+                      aria-label={
+                        status?.installed
+                          ? runningUpdate
+                            ? 'Updating...'
+                            : 'Update Mole'
+                          : runningInstall
+                            ? 'Installing...'
+                            : 'Install Mole'
+                      }
+                    >
+                      {status?.installed ? (
+                        <ArrowUpCircle className={`h-4 w-4 ${runningUpdate ? 'animate-pulse' : ''}`} />
+                      ) : (
+                        <Download className={`h-4 w-4 ${runningInstall ? 'animate-pulse' : ''}`} />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8}>
+                    <p>
+                      {status?.installed
+                        ? runningUpdate
+                          ? 'Updating...'
+                          : 'Update Mole'
+                        : runningInstall
+                          ? 'Installing...'
+                          : 'Install Mole'}
+                    </p>
+                    <p className="font-mono text-[11px]">
+                      {status?.installed ? 'mo update' : 'brew install mole'}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </div>
           </div>
@@ -447,7 +392,7 @@ function MoleManager(): React.JSX.Element {
               variant="ghost"
               className="border-0 shadow-none"
               onClick={() => {
-                void runQuery()
+                void runQuery(true)
               }}
               disabled={runningQuery}
             >
@@ -455,45 +400,58 @@ function MoleManager(): React.JSX.Element {
               {runningQuery ? 'Querying...' : 'Refresh'}
             </Button>
           </div>
-          <div className="overflow-hidden rounded-md border">
-            <table className="w-full border-collapse text-sm">
-              <thead className="bg-muted/50">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-muted-foreground/90">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">App</th>
-                  <th className="px-3 py-2 text-left font-medium">Size</th>
-                  <th className="px-3 py-2 text-left font-medium">Last Used</th>
-                  <th className="px-3 py-2 text-left font-medium">Source</th>
-                  <th className="px-3 py-2 text-left font-medium">Action</th>
+                  <th className="px-2 py-1.5 text-left font-medium">App</th>
+                  <th className="px-2 py-1.5 text-left font-medium">Size</th>
+                  <th className="px-2 py-1.5 text-left font-medium">Last Used</th>
+                  <th className="px-2 py-1.5 text-left font-medium">Source</th>
+                  <th className="px-2 py-1.5 text-left font-medium">Action</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="[&>tr]:border-b [&>tr]:border-white/[0.06] [&>tr:last-child]:border-0">
                 {rows.length > 0 ? (
                   rows.map((row) => (
-                    <tr key={row.name} className="border-t">
-                      <td className="px-3 py-2">{row.name}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{row.size ?? 'N/A'}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{row.lastUsed ?? 'N/A'}</td>
-                      <td className="px-3 py-2">
+                    <tr key={row.name}>
+                      <td className="px-2 py-2">{row.name}</td>
+                      <td className="px-2 py-2 text-muted-foreground">{row.size ?? 'N/A'}</td>
+                      <td className="px-2 py-2 text-muted-foreground">{row.lastUsed ?? 'N/A'}</td>
+                      <td className="px-2 py-2">
                         <Badge variant={row.uninstallSource === 'brew' ? 'secondary' : 'outline'}>
                           {row.uninstallSource}
                         </Badge>
                       </td>
-                      <td className="px-3 py-2">
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            void runUninstall(row)
-                          }}
-                          disabled={runningQuery || runningUninstallApp !== null}
-                        >
-                          {runningUninstallApp === row.name ? 'Uninstalling...' : 'Uninstall'}
-                        </Button>
+                      <td className="px-2 py-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              className={actionIconButtonClass}
+                              onClick={() => {
+                                void runUninstall(row)
+                              }}
+                              disabled={runningQuery || runningUninstallApp !== null}
+                              aria-label={runningUninstallApp === row.name ? 'Uninstalling...' : 'Uninstall'}
+                            >
+                              <Trash2
+                                className={`h-4 w-4 ${runningUninstallApp === row.name ? 'animate-pulse' : ''}`}
+                              />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent sideOffset={8}>
+                            <p>{runningUninstallApp === row.name ? 'Uninstalling...' : 'Uninstall'}</p>
+                            <p className="font-mono text-[11px]">{row.uninstallCommand}</p>
+                          </TooltipContent>
+                        </Tooltip>
                       </td>
                     </tr>
                   ))
                 ) : (
-                  <tr className="border-t">
-                    <td className="px-3 py-8 text-center text-muted-foreground" colSpan={5}>
+                  <tr>
+                    <td className="px-2 py-8 text-center text-muted-foreground" colSpan={5}>
                       {runningQuery ? 'Querying, please wait...' : 'No uninstallable apps parsed.'}
                     </td>
                   </tr>
@@ -514,7 +472,7 @@ function MoleManager(): React.JSX.Element {
           <Alert>
             <AlertDescription className="space-y-1">
               <p className="font-medium">Raw output snippet when parsing fails:</p>
-              <pre className="max-h-40 overflow-auto rounded-md bg-muted p-2 text-xs">{lastRawOutput}</pre>
+              <pre className="max-h-40 overflow-auto rounded-md p-2 text-xs">{lastRawOutput}</pre>
             </AlertDescription>
           </Alert>
         ) : null}

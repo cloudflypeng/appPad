@@ -160,6 +160,58 @@ const api = {
       } | null
       updatedAt: number | null
     }>,
+  getCachedNodeVersions: () =>
+    ipcRenderer.invoke('cache:get-node-versions') as Promise<{
+      status: Array<{
+        formula: string
+        installedVersion: string | null
+        installed: boolean
+        active: boolean
+      }> | null
+      updatedAt: number | null
+    }>,
+  refreshNodeVersionsCache: () =>
+    ipcRenderer.invoke('cache:refresh-node-versions') as Promise<{
+      status: Array<{
+        formula: string
+        installedVersion: string | null
+        installed: boolean
+        active: boolean
+      }> | null
+      updatedAt: number | null
+    }>,
+  getCachedMoleUninstallApps: () =>
+    ipcRenderer.invoke('cache:get-mole-uninstall-apps') as Promise<{
+      status: {
+        rows: Array<{
+          name: string
+          size: string | null
+          lastUsed: string | null
+          uninstallSource: 'brew' | 'mole'
+          uninstallCommand: string
+        }>
+        rawOutput: string
+        queryCommand: string
+        error: string | null
+      } | null
+      updatedAt: number | null
+    }>,
+  refreshMoleUninstallAppsCache: () =>
+    ipcRenderer.invoke('cache:refresh-mole-uninstall-apps') as Promise<{
+      status: {
+        rows: Array<{
+          name: string
+          size: string | null
+          lastUsed: string | null
+          uninstallSource: 'brew' | 'mole'
+          uninstallCommand: string
+        }>
+        rawOutput: string
+        queryCommand: string
+        error: string | null
+      } | null
+      updatedAt: number | null
+    }>,
   checkForUpdates: () =>
     ipcRenderer.invoke('check-for-updates') as Promise<{
       success: boolean

@@ -57,6 +57,28 @@ type MoleStatus = {
   installMethod: string | null
 }
 
+type NodeVersionCacheItem = {
+  formula: string
+  installedVersion: string | null
+  installed: boolean
+  active: boolean
+}
+
+type MoleUninstallCandidate = {
+  name: string
+  size: string | null
+  lastUsed: string | null
+  uninstallSource: 'brew' | 'mole'
+  uninstallCommand: string
+}
+
+type MoleUninstallAppsCache = {
+  rows: MoleUninstallCandidate[]
+  rawOutput: string
+  queryCommand: string
+  error: string | null
+}
+
 type CachedStatusPayload<T> = {
   status: T | null
   updatedAt: number | null
@@ -1286,6 +1308,188 @@ async function resolveBrewPath(): Promise<string | null> {
   return brewPath || null
 }
 
+function normalizeAppToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function stripAnsiAndControl(text: string): string {
+  return text
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1b[@-_]/g, '')
+}
+
+function parseMoleUninstallRows(output: string): Array<Pick<MoleUninstallCandidate, 'name' | 'size' | 'lastUsed'>> {
+  const normalized = stripAnsiAndControl(output).replace(/\r/g, '\n')
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+
+  const headerIndex = lines
+    .map((line, index) => ({ line, index }))
+    .filter((item) => item.line.includes('Select Apps to Remove'))
+    .at(-1)?.index
+
+  const scanLines = headerIndex !== undefined ? lines.slice(headerIndex) : lines
+  const byName = new Map<string, Pick<MoleUninstallCandidate, 'name' | 'size' | 'lastUsed'>>()
+
+  for (const rawLine of scanLines) {
+    const line = rawLine.trim()
+    const detailed = line.match(/^(?:➤\s*)?○\s+(.+?)\s{2,}(.+?)\s*\|\s*(.+)$/)
+    if (detailed) {
+      const name = detailed[1].trim()
+      const size = detailed[2].trim()
+      const lastUsed = detailed[3].trim()
+      byName.set(name, {
+        name,
+        size: size === '...' ? null : size,
+        lastUsed: lastUsed === '...' ? null : lastUsed
+      })
+      continue
+    }
+
+    const simple = line.match(/^(?:➤\s*)?○\s+(.+)$/)
+    if (simple) {
+      const name = simple[1].trim()
+      if (!name || name.includes('|') || name.includes('selected')) continue
+      byName.set(name, { name, size: null, lastUsed: null })
+    }
+  }
+
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function getInstalledBrewTokenMap(): Map<string, string> {
+  const db = getCacheDb()
+  const rows = db
+    .prepare(
+      `
+      SELECT token, name
+      FROM installed_apps_cache
+      WHERE installed = 1
+    `
+    )
+    .all() as Array<{ token: string; name: string | null }>
+
+  const map = new Map<string, string>()
+  rows.forEach((row) => {
+    const token = row.token?.trim()
+    if (!token) return
+    map.set(normalizeAppToken(token), token)
+    if (row.name?.trim()) {
+      map.set(normalizeAppToken(row.name), token)
+    }
+  })
+  return map
+}
+
+async function getNodeVersionItems(): Promise<NodeVersionCacheItem[]> {
+  const brewPath = await resolveBrewPath()
+  if (!brewPath) {
+    return []
+  }
+
+  const [search, nodeExecPathResult] = await Promise.all([
+    runCommand(brewPath, ['search', '/^node(@[0-9]+)?$/'], 1000 * 30),
+    runShellCommand('node -p "process.execPath" 2>/dev/null || true', 1000 * 15)
+  ])
+  const activeExecPath = nodeExecPathResult.stdout.trim()
+
+  const formulas = [
+    ...new Set(
+      search.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => /^node(?:@\d+)?$/.test(line))
+    )
+  ]
+
+  formulas.sort((a, b) => {
+    if (a === 'node') return -1
+    if (b === 'node') return 1
+    const aMajor = Number.parseInt(a.replace('node@', ''), 10)
+    const bMajor = Number.parseInt(b.replace('node@', ''), 10)
+    if (Number.isNaN(aMajor) || Number.isNaN(bMajor)) return a.localeCompare(b)
+    return bMajor - aMajor
+  })
+
+  const next: NodeVersionCacheItem[] = []
+  for (const formula of formulas) {
+    const versionResult = await runCommand(brewPath, ['list', '--versions', formula], 1000 * 20)
+    const tokens = versionResult.stdout.trim().split(/\s+/).filter(Boolean)
+    const installedVersion = tokens.length > 1 ? tokens[1] : null
+    const installed = installedVersion !== null
+    const active =
+      installed &&
+      activeExecPath.length > 0 &&
+      (activeExecPath.includes(`/Cellar/${formula}/`) ||
+        activeExecPath.includes(`/opt/homebrew/opt/${formula}/`) ||
+        activeExecPath.includes(`/usr/local/opt/${formula}/`))
+
+    next.push({
+      formula,
+      installedVersion,
+      installed,
+      active
+    })
+  }
+
+  return next
+}
+
+const MOLE_UNINSTALL_QUERY_COMMAND = "printf 'q\\n' | (mo uninstall)"
+
+async function queryMoleUninstallApps(): Promise<MoleUninstallAppsCache> {
+  const result = await runShellCommand(MOLE_UNINSTALL_QUERY_COMMAND, 1000 * 60 * 2)
+  const mixedOutput = [result.stdout, result.stderr].filter(Boolean).join('\n')
+
+  if (!mixedOutput.trim()) {
+    return {
+      rows: [],
+      rawOutput: mixedOutput,
+      queryCommand: MOLE_UNINSTALL_QUERY_COMMAND,
+      error: result.success ? null : result.error ?? 'Query command failed.'
+    }
+  }
+
+  const parsedRows = parseMoleUninstallRows(mixedOutput)
+  const brewTokenMap = getInstalledBrewTokenMap()
+  const rows: MoleUninstallCandidate[] = parsedRows.map((row) => {
+    const matchedBrewToken = brewTokenMap.get(normalizeAppToken(row.name))
+    if (matchedBrewToken) {
+      return {
+        ...row,
+        uninstallSource: 'brew',
+        uninstallCommand: `brew uninstall --cask ${shellQuote(matchedBrewToken)}`
+      }
+    }
+    return {
+      ...row,
+      uninstallSource: 'mole',
+      uninstallCommand: `mo uninstall ${shellQuote(row.name)}`
+    }
+  })
+
+  let error: string | null = null
+  if (!result.success) {
+    error = result.error ?? 'Query command exited with a non-zero status.'
+  } else if (rows.length === 0) {
+    error = 'Command completed, but no uninstallable apps were parsed.'
+  }
+
+  return {
+    rows,
+    rawOutput: mixedOutput,
+    queryCommand: MOLE_UNINSTALL_QUERY_COMMAND,
+    error
+  }
+}
+
 async function getBrewStatus(): Promise<BrewStatus> {
   const brewPath = await resolveBrewPath()
   if (!brewPath) {
@@ -1460,6 +1664,26 @@ async function refreshMoleStatusCache(): Promise<CachedStatusPayload<MoleStatus>
     ? parseMoleStatusFromOutput(output)
     : { installed: false, currentVersion: null, installMethod: null }
   const updatedAt = setJsonCacheValue('status_mole', status)
+  return { status, updatedAt }
+}
+
+function getCachedNodeVersions(): CachedStatusPayload<NodeVersionCacheItem[]> {
+  return getJsonCacheValue<NodeVersionCacheItem[]>('node_versions_v1')
+}
+
+async function refreshNodeVersionsCache(): Promise<CachedStatusPayload<NodeVersionCacheItem[]>> {
+  const status = await getNodeVersionItems()
+  const updatedAt = setJsonCacheValue('node_versions_v1', status)
+  return { status, updatedAt }
+}
+
+function getCachedMoleUninstallApps(): CachedStatusPayload<MoleUninstallAppsCache> {
+  return getJsonCacheValue<MoleUninstallAppsCache>('mole_uninstall_apps_v1')
+}
+
+async function refreshMoleUninstallAppsCache(): Promise<CachedStatusPayload<MoleUninstallAppsCache>> {
+  const status = await queryMoleUninstallApps()
+  const updatedAt = setJsonCacheValue('mole_uninstall_apps_v1', status)
   return { status, updatedAt }
 }
 
@@ -1872,6 +2096,18 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('cache:refresh-mole-status', async () => {
     return refreshMoleStatusCache()
+  })
+  ipcMain.handle('cache:get-node-versions', async () => {
+    return getCachedNodeVersions()
+  })
+  ipcMain.handle('cache:refresh-node-versions', async () => {
+    return refreshNodeVersionsCache()
+  })
+  ipcMain.handle('cache:get-mole-uninstall-apps', async () => {
+    return getCachedMoleUninstallApps()
+  })
+  ipcMain.handle('cache:refresh-mole-uninstall-apps', async () => {
+    return refreshMoleUninstallAppsCache()
   })
   ipcMain.handle('brew:diagnose-version', async () => {
     const brewPath = await resolveBrewPath()
