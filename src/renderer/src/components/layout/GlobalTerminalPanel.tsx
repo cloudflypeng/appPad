@@ -177,7 +177,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
       fontSize: 13,
       scrollback: 5000,
       theme: {
-        background: '#0b1020',
+        background: 'rgba(17, 17, 19, 0.96)',
         foreground: '#e6edf3'
       }
     })
@@ -612,7 +612,8 @@ function GlobalTerminalPanel(): React.JSX.Element {
       {!expanded ? (
         <Button
           size="icon"
-          className="fixed bottom-4 right-4 z-50 h-10 w-10 rounded-full shadow-lg"
+          variant="outline"
+          className="fixed bottom-6 right-6 z-50 h-10 w-10 rounded-full border-white/[0.14] bg-[#121214]/92 text-zinc-100 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-md hover:bg-[#1b1b1f] hover:text-white"
           onClick={openPanel}
           title="Open terminal"
         >
@@ -620,12 +621,12 @@ function GlobalTerminalPanel(): React.JSX.Element {
         </Button>
       ) : null}
       <aside
-        className={`fixed bottom-4 right-4 z-50 w-[min(560px,calc(100vw-2rem))] transition-transform duration-300 ease-out ${
-          expanded ? 'translate-x-0' : 'translate-x-[calc(100%+2rem)]'
+        className={`fixed bottom-6 right-6 z-50 w-[min(560px,calc(100vw-3rem))] transition-transform duration-300 ease-out ${
+          expanded ? 'translate-x-0' : 'translate-x-[calc(100%+3rem)]'
         }`}
       >
-        <div className="overflow-hidden rounded-xl border bg-[#0b1020] shadow-2xl">
-          <div className="flex h-10 items-center justify-between border-b border-white/10 px-3 text-white/90">
+        <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#111113]/96 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+          <div className="flex h-10 items-center justify-between border-b border-white/[0.08] bg-gradient-to-b from-[#1a1a1d]/72 to-[#131316]/58 px-3 text-zinc-100">
             <div className="flex items-center gap-2 text-sm">
               <TerminalSquare className="h-4 w-4" />
               <span>{sessionReady ? 'Terminal' : 'Starting shell...'}</span>
@@ -634,7 +635,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
               <div
                 role="radiogroup"
                 aria-label="Terminal shell"
-                className="flex items-center gap-1 rounded-md border border-white/25 bg-[#121a2f] p-0.5"
+                className="flex items-center gap-1 rounded-md border border-white/[0.12] bg-[#17171a] p-0.5"
               >
                 <button
                   type="button"
@@ -643,8 +644,8 @@ function GlobalTerminalPanel(): React.JSX.Element {
                   onClick={() => switchTerminalShell('zsh')}
                   className={`h-6 rounded px-2 text-xs ${
                     selectedShell === 'zsh'
-                      ? 'bg-white/20 text-white'
-                      : 'text-white/70 hover:bg-white/10 hover:text-white'
+                      ? 'bg-white/[0.14] text-zinc-100'
+                      : 'text-zinc-400 hover:bg-white/[0.08] hover:text-zinc-100'
                   }`}
                 >
                   zsh
@@ -656,8 +657,8 @@ function GlobalTerminalPanel(): React.JSX.Element {
                   onClick={() => switchTerminalShell('bash')}
                   className={`h-6 rounded px-2 text-xs ${
                     selectedShell === 'bash'
-                      ? 'bg-white/20 text-white'
-                      : 'text-white/70 hover:bg-white/10 hover:text-white'
+                      ? 'bg-white/[0.14] text-zinc-100'
+                      : 'text-zinc-400 hover:bg-white/[0.08] hover:text-zinc-100'
                   }`}
                 >
                   bash
@@ -666,17 +667,17 @@ function GlobalTerminalPanel(): React.JSX.Element {
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-7 w-7 text-white/80 hover:bg-white/10 hover:text-white"
+                className="h-7 w-7 text-zinc-300 hover:bg-white/[0.08] hover:text-white"
                 onClick={() => setExpanded(false)}
               >
                 <Minimize2 className="h-4 w-4" />
               </Button>
             </div>
           </div>
-          <div className="p-2">
+          <div className="bg-[#111113] p-2">
             <div
               ref={containerRef}
-              className="h-72 w-full overflow-hidden"
+              className="h-72 w-full overflow-hidden rounded-md bg-[#0b0b0d]"
               onClick={() => termRef.current?.focus()}
             />
           </div>

@@ -58,13 +58,13 @@
   --input: #1a1e25;
   --ring: #667388;
   --sidebar: #08090a;
-  --sidebar-foreground: hsl(219 18% 80%);
+  --sidebar-foreground: hsl(220 8% 78%);
   --sidebar-primary: hsl(0 0% 97%);
   --sidebar-primary-foreground: hsl(222 24% 8%);
-  --sidebar-accent: hsl(222 18% 14%);
-  --sidebar-accent-foreground: hsl(220 21% 89%);
-  --sidebar-border: hsl(222 21% 16%);
-  --sidebar-ring: hsl(215 15% 56%);
+  --sidebar-accent: hsl(0 0% 13%);
+  --sidebar-accent-foreground: hsl(220 8% 90%);
+  --sidebar-border: hsl(0 0% 17%);
+  --sidebar-ring: hsl(0 0% 42%);
   --app-font-sans:
     'SF Pro Text',
     'SF Pro Display',
@@ -104,13 +104,13 @@
   --input: #1a202c;
   --ring: #6e7b91;
   --sidebar: #060709;
-  --sidebar-foreground: hsl(219 18% 82%);
+  --sidebar-foreground: hsl(220 8% 82%);
   --sidebar-primary: hsl(0 0% 97%);
   --sidebar-primary-foreground: hsl(223 25% 8%);
-  --sidebar-accent: hsl(223 18% 14%);
-  --sidebar-accent-foreground: hsl(220 21% 90%);
-  --sidebar-border: hsl(223 20% 16%);
-  --sidebar-ring: hsl(215 15% 58%);
+  --sidebar-accent: hsl(0 0% 13%);
+  --sidebar-accent-foreground: hsl(220 8% 92%);
+  --sidebar-border: hsl(0 0% 17%);
+  --sidebar-ring: hsl(0 0% 46%);
 }
 
 @layer base {

@@ -38,7 +38,8 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarProvider
+  SidebarProvider,
+  SidebarTrigger
 } from '@/components/ui/sidebar'
 
 const APP_TOPBAR_REFRESH_EVENT = 'app:topbar-refresh'
@@ -116,6 +117,10 @@ function App(): React.JSX.Element {
       icon: ArrowUpCircle
     }
   ]
+  const tabs = [...navigationTabs, ...updateTabs]
+  const activeTabConfig = tabs.find((tab) => tab.key === activeTab)
+  const activeTitle = activeTabConfig?.title ?? 'appPad'
+
   const handleRefreshInstalledState = async (): Promise<void> => {
     setSyncingInstalledApps(true)
     try {
@@ -127,9 +132,9 @@ function App(): React.JSX.Element {
   }
 
   return (
-    <section className="min-h-dvh bg-background p-0">
+    <section className="min-h-dvh bg-[#090909] p-0">
       <SidebarProvider>
-        <div className="relative m-3 flex h-full w-full overflow-hidden rounded-2xl bg-background">
+        <div className="relative m-3 flex h-full w-full overflow-hidden rounded-2xl bg-[#0d0d0f] shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_40px_100px_rgba(0,0,0,0.55)]">
           <div
             className="absolute inset-x-0 top-0 z-20 h-8 select-none"
             style={{ WebkitAppRegion: 'drag' } as CSSProperties}
@@ -162,7 +167,7 @@ function App(): React.JSX.Element {
                     {navigationTabs.map((tab) => (
                       <SidebarMenuItem key={tab.key}>
                         <SidebarMenuButton
-                          className="h-9 rounded-lg px-3 text-[12px] font-medium transition-all duration-300 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
+                          className="h-9 rounded-lg bg-transparent px-3 text-[12px] font-medium text-zinc-300 transition-all duration-300 hover:bg-white/[0.06] hover:text-zinc-100 data-[active=true]:bg-white/[0.08] data-[active=true]:text-white group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
                           isActive={activeTab === tab.key}
                           tooltip={tab.title}
                           onClick={() => setActiveTab(tab.key)}
@@ -184,7 +189,7 @@ function App(): React.JSX.Element {
                     {updateTabs.map((tab) => (
                       <SidebarMenuItem key={tab.key}>
                         <SidebarMenuButton
-                          className="h-9 rounded-lg px-3 text-[12px] font-medium transition-all duration-300 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
+                          className="h-9 rounded-lg bg-transparent px-3 text-[12px] font-medium text-zinc-300 transition-all duration-300 hover:bg-white/[0.06] hover:text-zinc-100 data-[active=true]:bg-white/[0.08] data-[active=true]:text-white group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
                           isActive={activeTab === tab.key}
                           tooltip={tab.title}
                           onClick={() => setActiveTab(tab.key)}
@@ -221,9 +226,25 @@ function App(): React.JSX.Element {
             </SidebarFooter>
           </Sidebar>
 
-          <SidebarInset className="min-w-0 flex-1 p-3 h-screen">
-            <div className="relative flex h-screen overflow-hidden flex-1 flex-col rounded-2xl bg-muted/35">
-              <SmoothScrollArea className="h-[90vh] min-h-0 flex-1 pt-10">
+          <SidebarInset className="min-w-0 h-screen flex-1 p-2">
+            <div className="relative flex h-screen flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111113] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_22px_60px_rgba(0,0,0,0.5)]">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_130%_at_30%_2%,rgba(255,255,255,0.08)_0%,rgba(255,255,255,0.03)_36%,rgba(17,17,19,0)_68%)]" />
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.45)_0%,rgba(0,0,0,0.16)_16%,rgba(0,0,0,0.04)_50%,rgba(0,0,0,0.16)_84%,rgba(0,0,0,0.45)_100%)]" />
+              <div className="pointer-events-none absolute inset-0 opacity-[0.14] [background-image:radial-gradient(rgba(255,255,255,0.22)_0.4px,transparent_0.4px)] [background-size:3px_3px]" />
+              <SmoothScrollArea className="relative z-10 h-[90vh] min-h-0 flex-1 bg-gradient-to-b from-[#161618]/70 via-[#151517]/35 to-[#101012]/72">
+                <div className="sticky top-0 z-10 rounded-t-2xl border-b border-white/[0.09] bg-gradient-to-b from-[#1a1a1c]/92 to-[#121214]/84 px-4 pb-2 pt-6 backdrop-blur-xl">
+                  <div className="flex items-center gap-2">
+                    <SidebarTrigger className="text-muted-foreground hover:text-foreground size-7 rounded-md border border-border/60 bg-background transition-[color,background-color,border-color] duration-200 hover:bg-accent" />
+                    <div>
+                      <p className="text-muted-foreground text-[9px] font-medium uppercase tracking-[0.12em]">
+                        Workspace
+                      </p>
+                      <h1 className="pt-1 text-[15px] font-semibold leading-none tracking-[-0.01em]">
+                        {activeTitle}
+                      </h1>
+                    </div>
+                  </div>
+                </div>
                 {activeTab === 'homebrew' ? <HomebrewManager /> : null}
                 {activeTab === 'browser' ? <BrowserCatalog /> : null}
                 {activeTab === 'terminal' ? <TerminalManager /> : null}

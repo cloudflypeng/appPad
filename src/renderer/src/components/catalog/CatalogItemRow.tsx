@@ -70,7 +70,7 @@ function CatalogItemRow({
   const icon = item.iconKey ? ICON_MAP[item.iconKey] : undefined
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border bg-background px-4 py-3 md:flex-row md:items-center md:justify-between">
+    <div className="flex flex-col gap-3 rounded-xl border border-white/[0.08] bg-gradient-to-b from-[#171719]/88 to-[#101012]/92 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_24px_rgba(0,0,0,0.3)] md:flex-row md:items-center md:justify-between">
       <div className="flex min-w-0 items-center gap-3">
         {icon ? (
           <icon.Component size={40} color={icon.color} className="mt-0.5 shrink-0" />
@@ -96,16 +96,25 @@ function CatalogItemRow({
 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium">{item.name}</p>
-            <Badge variant={item.installed ? 'default' : 'secondary'}>
+            <p className="text-sm font-medium text-zinc-100">{item.name}</p>
+            <Badge
+              variant="outline"
+              className={
+                item.installed
+                  ? 'border-white/18 bg-white/[0.08] text-zinc-100'
+                  : 'border-white/12 bg-transparent text-zinc-400'
+              }
+            >
               {item.installed ? 'Installed' : 'Not Installed'}
             </Badge>
             {item.installed && item.hasUpdate ? (
-              <Badge variant="destructive">Update Available</Badge>
+              <Badge variant="outline" className="border-white/18 bg-white/[0.08] text-zinc-200">
+                Update Available
+              </Badge>
             ) : null}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
-          <p className="mt-2 font-mono text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-zinc-400">{item.description}</p>
+          <p className="mt-2 rounded-md border border-white/[0.06] bg-black/20 px-2 py-1 font-mono text-xs text-zinc-400">
             {item.installed
               ? (item.updateCommand ??
                 (item.brewType === 'cask'
@@ -121,12 +130,24 @@ function CatalogItemRow({
 
       <div className="flex items-center gap-2">
         {item.installed && onUpdate ? (
-          <Button size="sm" variant="secondary" onClick={() => onUpdate(item)} disabled={disabled}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-white/12 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.1] hover:text-white"
+            onClick={() => onUpdate(item)}
+            disabled={disabled}
+          >
             <RefreshCw className="mr-2 h-4 w-4" />
             {updating ? 'Updating...' : 'Update'}
           </Button>
         ) : null}
-        <Button size="sm" onClick={() => onToggle(item)} disabled={disabled}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-white/18 bg-white/[0.08] text-zinc-100 hover:bg-white/[0.14] hover:text-white"
+          onClick={() => onToggle(item)}
+          disabled={disabled}
+        >
           <Download className="mr-2 h-4 w-4" />
           {running
             ? item.installed
