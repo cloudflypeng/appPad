@@ -67,9 +67,18 @@
   --sidebar-border: hsl(0 0% 17%);
   --sidebar-ring: hsl(0 0% 42%);
   --app-font-sans:
-    'SF Pro Text',
-    'SF Pro Display',
-    'Avenir Next',
+    Inter,
+    'Inter Variable',
+    'Segoe UI Variable',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Noto Sans CJK SC',
+    system-ui,
+    sans-serif;
+  --app-font-display:
+    'Inter Display',
+    Inter,
+    'Inter Variable',
     'Segoe UI Variable',
     'PingFang SC',
     'Hiragino Sans GB',
@@ -127,6 +136,20 @@
       'cv11' 1,
       'tnum' 1;
     letter-spacing: 0.01em;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  [data-slot='sheet-title'],
+  [data-slot='card-title'],
+  [data-slot='alert-title'] {
+    font-family: var(--app-font-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
   }
 }
 
