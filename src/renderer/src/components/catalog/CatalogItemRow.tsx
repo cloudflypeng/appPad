@@ -1,5 +1,5 @@
 import { type ComponentType } from 'react'
-import { Download, Globe, RefreshCw, TerminalSquare } from 'lucide-react'
+import { Download, Globe, RefreshCw, TerminalSquare, Trash2 } from 'lucide-react'
 import {
   SiArc,
   SiArcHex,
@@ -128,8 +128,8 @@ function CatalogItemRow({
             </Badge>
             {item.installed && item.hasUpdate ? (
               <Badge
-                variant="secondary"
-                className="bg-transparent px-1.5 py-0 text-[10px] text-zinc-200"
+                variant="outline"
+                className="border-amber-300 bg-amber-300 px-1.5 py-0 text-[10px] font-semibold text-amber-950"
               >
                 Update Available
               </Badge>
@@ -186,7 +186,11 @@ function CatalogItemRow({
               disabled={disabled}
               aria-label={toggleLabel}
             >
-              <Download className={`h-4 w-4 ${running ? 'animate-pulse' : ''}`} />
+              {item.installed ? (
+                <Trash2 className={`h-4 w-4 ${running ? 'animate-pulse' : ''}`} />
+              ) : (
+                <Download className={`h-4 w-4 ${running ? 'animate-pulse' : ''}`} />
+              )}
             </Button>
           </TooltipTrigger>
           <TooltipContent sideOffset={8}>

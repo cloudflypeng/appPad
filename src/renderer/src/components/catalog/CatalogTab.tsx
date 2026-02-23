@@ -53,6 +53,15 @@ function parseTokenList(raw: string): string[] {
     .filter(Boolean)
 }
 
+function sortInstalledItems(items: CatalogItem[]): CatalogItem[] {
+  return [...items].sort((a, b) => {
+    const aPriority = a.hasUpdate ? 1 : 0
+    const bPriority = b.hasUpdate ? 1 : 0
+    if (aPriority !== bPriority) return bPriority - aPriority
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+  })
+}
+
 function CatalogTab({
   catalogKey,
   title,
@@ -73,13 +82,27 @@ function CatalogTab({
     () => seeds.map((seed) => ({ ...seed, brewType: seed.brewType ?? defaultBrewType })),
     [seeds, defaultBrewType]
   )
-  const installedCasks = useMemo(
-    () => (discoverInstalled ? items.filter((item) => item.brewType === 'cask') : []),
+  const installedVisibleItems = useMemo(
+    () => (discoverInstalled ? sortInstalledItems(items.filter((item) => item.installed)) : []),
     [discoverInstalled, items]
   )
+  const updatableItems = useMemo(
+    () => (discoverInstalled ? installedVisibleItems.filter((item) => item.hasUpdate) : []),
+    [discoverInstalled, installedVisibleItems]
+  )
+  const installedCasks = useMemo(
+    () =>
+      discoverInstalled
+        ? installedVisibleItems.filter((item) => item.brewType === 'cask' && !item.hasUpdate)
+        : [],
+    [discoverInstalled, installedVisibleItems]
+  )
   const installedFormulae = useMemo(
-    () => (discoverInstalled ? items.filter((item) => item.brewType === 'formula') : []),
-    [discoverInstalled, items]
+    () =>
+      discoverInstalled
+        ? installedVisibleItems.filter((item) => item.brewType === 'formula' && !item.hasUpdate)
+        : [],
+    [discoverInstalled, installedVisibleItems]
   )
 
   const loadCatalog = async (forceRefresh = false): Promise<void> => {
@@ -394,12 +417,16 @@ function CatalogTab({
     }
   }, [])
 
+  const sectionCardClass = 'px-3 py-3 md:px-4'
+  const updateSectionCardClass = 'px-3 py-3 md:px-4'
+  const emptyCardClass = 'px-4 py-8 text-sm text-zinc-400'
+
   return (
-    <main className="flex justify-center py-4">
-      <div className="mx-auto flex w-4/5 flex-col gap-4">
-        <div className="space-y-3">
+    <main className="flex justify-center py-5 md:py-6">
+      <div className="mx-auto flex w-[min(1080px,88vw)] flex-col gap-4">
+        <div className="space-y-4">
           {brewInstalled === false ? (
-            <Alert>
+            <Alert className="text-zinc-200">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
                 Homebrew is not installed. Install Homebrew in the Homebrew tab before installing{' '}
@@ -411,25 +438,57 @@ function CatalogTab({
           {loading && items.length === 0 ? (
             <div className="space-y-3">
               {Array.from({ length: discoverInstalled ? 8 : normalizedSeeds.length || 6 }).map((_, idx) => (
-                <Skeleton key={idx} className="h-20 w-full rounded-md" />
+                <Skeleton key={idx} className="h-20 w-full rounded-xl bg-white/[0.04]" />
               ))}
             </div>
+          ) : discoverInstalled && installedVisibleItems.length === 0 ? (
+            <div className={emptyCardClass}>No installed Homebrew formulas or casks found.</div>
           ) : items.length === 0 ? (
-            <div className="rounded-md border bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
-              {discoverInstalled ? 'No installed Homebrew formulas or casks found.' : 'No items found.'}
-            </div>
+            <div className={emptyCardClass}>No items found.</div>
           ) : discoverInstalled ? (
             <div className="space-y-4">
-              <section className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Casks
-                </h3>
+              {updatableItems.length > 0 ? (
+                <section className={updateSectionCardClass}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-amber-200/90">
+                      Updates Available
+                    </h3>
+                    <span className="text-[11px] text-amber-100/70">{updatableItems.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-2.5">
+                    {updatableItems.map((item) => (
+                      <CatalogItemRow
+                        key={`${item.brewType ?? 'item'}:${item.token}`}
+                        item={item}
+                        disabled={brewInstalled !== true || runningAction !== null}
+                        running={
+                          runningAction?.token === item.token &&
+                          (runningAction.action === 'install' || runningAction.action === 'uninstall')
+                        }
+                        updating={runningAction?.token === item.token && runningAction.action === 'update'}
+                        onToggle={(next) => {
+                          void toggleInstall(next)
+                        }}
+                        onUpdate={(next) => {
+                          void updateItem(next)
+                        }}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              <section className={sectionCardClass}>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-400">Casks</h3>
+                  <span className="text-[11px] text-zinc-500">{installedCasks.length}</span>
+                </div>
                 {installedCasks.length === 0 ? (
-                  <div className="rounded-md border bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
-                    No installed casks found.
+                  <div className="px-4 py-4 text-sm text-zinc-400">
+                    {updatableItems.length > 0 ? 'No other installed casks found.' : 'No installed casks found.'}
                   </div>
                 ) : (
-                  <div className="space-y-2 flex flex-col gap-3">
+                  <div className="flex flex-col gap-2.5">
                     {installedCasks.map((item) => (
                       <CatalogItemRow
                         key={`${item.brewType ?? 'item'}:${item.token}`}
@@ -452,16 +511,19 @@ function CatalogTab({
                 )}
               </section>
 
-              <section className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Formulae
-                </h3>
+              <section className={sectionCardClass}>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-400">Formulae</h3>
+                  <span className="text-[11px] text-zinc-500">{installedFormulae.length}</span>
+                </div>
                 {installedFormulae.length === 0 ? (
-                  <div className="rounded-md border bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
-                    No installed formulae found.
+                  <div className="px-4 py-4 text-sm text-zinc-400">
+                    {updatableItems.length > 0
+                      ? 'No other installed formulae found.'
+                      : 'No installed formulae found.'}
                   </div>
                 ) : (
-                  <div className="space-y-2 flex flex-col gap-3">
+                  <div className="flex flex-col gap-2.5">
                     {installedFormulae.map((item) => (
                       <CatalogItemRow
                         key={`${item.brewType ?? 'item'}:${item.token}`}
@@ -485,23 +547,29 @@ function CatalogTab({
               </section>
             </div>
           ) : (
-            <div className="space-y-2 flex flex-col gap-3">
-              {items.map((item) => (
-                <CatalogItemRow
-                  key={`${item.brewType ?? 'item'}:${item.token}`}
-                  item={item}
-                  disabled={brewInstalled !== true || runningAction !== null}
-                  running={
-                    runningAction?.token === item.token &&
-                    (runningAction.action === 'install' || runningAction.action === 'uninstall')
-                  }
-                  updating={runningAction?.token === item.token && runningAction.action === 'update'}
-                  onToggle={(next) => {
-                    void toggleInstall(next)
-                  }}
-                />
-              ))}
-            </div>
+            <section className={sectionCardClass}>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-400">{title}</h3>
+                <span className="text-[11px] text-zinc-500">{items.length}</span>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                {items.map((item) => (
+                  <CatalogItemRow
+                    key={`${item.brewType ?? 'item'}:${item.token}`}
+                    item={item}
+                    disabled={brewInstalled !== true || runningAction !== null}
+                    running={
+                      runningAction?.token === item.token &&
+                      (runningAction.action === 'install' || runningAction.action === 'uninstall')
+                    }
+                    updating={runningAction?.token === item.token && runningAction.action === 'update'}
+                    onToggle={(next) => {
+                      void toggleInstall(next)
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
           )}
 
           {error ? (

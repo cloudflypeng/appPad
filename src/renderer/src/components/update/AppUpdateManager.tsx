@@ -101,7 +101,14 @@ function AppUpdateManager(): React.JSX.Element {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={info?.updateAvailable ? 'default' : 'secondary'}>
+              <Badge
+                variant={info?.updateAvailable ? 'outline' : 'secondary'}
+                className={
+                  info?.updateAvailable
+                    ? 'border-amber-300 bg-amber-300 font-semibold text-amber-950'
+                    : undefined
+                }
+              >
                 {info?.updateAvailable ? 'Update Available' : 'Up To Date'}
               </Badge>
             </div>

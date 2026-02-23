@@ -37,6 +37,10 @@ function chunkTokens(tokens: string[], size = 50): string[][] {
   return chunks
 }
 
+function normalizeSearchKeyword(raw: string): string {
+  return raw.replace(/[^a-zA-Z0-9]/g, '')
+}
+
 function HomebrewSearchManager(): React.JSX.Element {
   const [keyword, setKeyword] = useState('')
   const [items, setItems] = useState<SearchResultItem[]>([])
@@ -219,13 +223,20 @@ function HomebrewSearchManager(): React.JSX.Element {
         <div className="flex flex-col gap-2 md:flex-row md:items-center">
           <Input
             value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
+            onChange={(event) => setKeyword(normalizeSearchKeyword(event.target.value))}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 void runSearch()
               }
             }}
             placeholder="Search Homebrew package, e.g. wget"
+            inputMode="text"
+            autoCapitalize="off"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
+            pattern="[A-Za-z0-9]*"
+            className="h-10 rounded-xl border-white/[0.16] bg-white/[0.04] px-3.5 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-white/[0.3] focus-visible:bg-white/[0.06] focus-visible:ring-white/[0.22]"
             disabled={loading || runningToken !== null}
           />
           <Button

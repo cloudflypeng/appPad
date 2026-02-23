@@ -14,6 +14,7 @@ const EXEC_BEGIN_MARKER_PREFIX = '__APPPAD_EXEC_BEGIN__'
 const EXEC_DONE_MARKER_PREFIX = '__APPPAD_EXEC_DONE__'
 const TERMINAL_EVENTS = getGlobalTerminalEvents()
 const TERMINAL_SHELL_STORAGE_KEY = 'appPad.terminal.shell'
+const EXEC_REQUEST_TIMEOUT_MS = 1000 * 60 * 30
 
 type TerminalShellChoice = 'zsh' | 'bash'
 
@@ -115,6 +116,14 @@ function buildExecWrapper(command: string, beginMarker: string, doneMarker: stri
   return `printf '%s\\n' '${beginMarker}'\n${normalizedCommand}__apppad_exec_code=$?\nprintf '%s%s%s\\n' '${doneMarker}' "$__apppad_exec_code" '__'\n`
 }
 
+function getDoneMarkerPartialTailLength(input: string, doneMarker: string): number {
+  const markerTailLen = getMarkerTailLength(input, doneMarker)
+  const doneTailPattern = new RegExp(`${escapeRegExp(doneMarker)}-?\\d*_{0,2}$`)
+  const doneTailMatch = input.match(doneTailPattern)
+  if (!doneTailMatch) return markerTailLen
+  return Math.max(markerTailLen, doneTailMatch[0].length)
+}
+
 function getInitialTerminalShell(): TerminalShellChoice {
   if (typeof window === 'undefined') return 'zsh'
   const stored = window.localStorage.getItem(TERMINAL_SHELL_STORAGE_KEY)
@@ -137,13 +146,14 @@ function GlobalTerminalPanel(): React.JSX.Element {
   const selectedShellRef = useRef<TerminalShellChoice>(selectedShell)
   const recreateSessionRef = useRef<(() => Promise<void>) | null>(null)
   const suppressNextExitRef = useRef(false)
-  const creatingSessionRef = useRef(false)
+  const creatingSessionPromiseRef = useRef<Promise<void> | null>(null)
   const pumpingOutputRef = useRef(false)
   const flowPausedRef = useRef(false)
   const pendingOutputRef = useRef<string[]>([])
   const pendingBytesRef = useRef(0)
   const execQueueRef = useRef<ExecRequest[]>([])
   const activeExecRef = useRef<ActiveExecState | null>(null)
+  const activeExecTimeoutIdRef = useRef<number | null>(null)
   const suppressNextPromptRef = useRef(false)
   const sessionJustStartedRef = useRef(false)
   const userInteractedRef = useRef(false)
@@ -200,10 +210,17 @@ function GlobalTerminalPanel(): React.JSX.Element {
       )
     }
 
+    const clearActiveExecTimeout = (): void => {
+      if (activeExecTimeoutIdRef.current === null) return
+      window.clearTimeout(activeExecTimeoutIdRef.current)
+      activeExecTimeoutIdRef.current = null
+    }
+
     const failPendingExecRequests = (message: string): void => {
       if (activeExecRef.current) {
         const active = activeExecRef.current
         activeExecRef.current = null
+        clearActiveExecTimeout()
         dispatchExecResult(active.requestId, {
           success: false,
           code: null,
@@ -282,24 +299,37 @@ function GlobalTerminalPanel(): React.JSX.Element {
     }
 
     const ensureSession = async (): Promise<void> => {
-      if (sessionIdRef.current || creatingSessionRef.current) return
-      creatingSessionRef.current = true
+      if (sessionIdRef.current) return
+      if (creatingSessionPromiseRef.current) {
+        await creatingSessionPromiseRef.current
+        return
+      }
+
+      const creation = (async () => {
+        try {
+          const result = await window.api.createTerminalSession({
+            shell: toShellPath(selectedShellRef.current)
+          })
+          sessionIdRef.current = result.sessionId
+          sessionJustStartedRef.current = true
+          userInteractedRef.current = false
+          flowPausedRef.current = false
+          setSessionReady(true)
+          await syncPtySize()
+          term.focus()
+        } catch (error) {
+          setSessionReady(false)
+          enqueueOutput(`${error instanceof Error ? error.message : 'failed to start terminal session'}\r\n`)
+        }
+      })()
+
+      creatingSessionPromiseRef.current = creation
       try {
-        const result = await window.api.createTerminalSession({
-          shell: toShellPath(selectedShellRef.current)
-        })
-        sessionIdRef.current = result.sessionId
-        sessionJustStartedRef.current = true
-        userInteractedRef.current = false
-        flowPausedRef.current = false
-        setSessionReady(true)
-        await syncPtySize()
-        term.focus()
-      } catch (error) {
-        setSessionReady(false)
-        enqueueOutput(`${error instanceof Error ? error.message : 'failed to start terminal session'}\r\n`)
+        await creation
       } finally {
-        creatingSessionRef.current = false
+        if (creatingSessionPromiseRef.current === creation) {
+          creatingSessionPromiseRef.current = null
+        }
       }
     }
 
@@ -327,10 +357,10 @@ function GlobalTerminalPanel(): React.JSX.Element {
         return processExecOutput(afterBegin)
       }
 
-      const donePattern = new RegExp(`(?:^|\\r?\\n)${escapeRegExp(active.doneMarker)}(-?\\d+)__`)
+      const donePattern = new RegExp(`${escapeRegExp(active.doneMarker)}(-?\\d+)__`)
       const doneMatch = donePattern.exec(combined)
       if (!doneMatch) {
-        const keepLen = getMarkerTailLength(combined, active.doneMarker)
+        const keepLen = getDoneMarkerPartialTailLength(combined, active.doneMarker)
         const rawVisible = combined.slice(0, combined.length - keepLen)
         const filtered = filterExecNoiseChunk(rawVisible, active)
         active.partial = combined.slice(combined.length - keepLen)
@@ -359,6 +389,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
       const requestId = active.requestId
       const stdout = active.captured
 
+      clearActiveExecTimeout()
       activeExecRef.current = null
 
       if (exitCode === 0) {
@@ -431,6 +462,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
       if (execQueueRef.current.length === 0) return
 
       await ensureSession()
+      if (activeExecRef.current) return
       const sessionId = sessionIdRef.current
       if (!sessionId) {
         failPendingExecRequests('Unable to create terminal session.')
@@ -451,11 +483,29 @@ function GlobalTerminalPanel(): React.JSX.Element {
         outputFilterPartial: '',
         captured: ''
       }
+      clearActiveExecTimeout()
+      activeExecTimeoutIdRef.current = window.setTimeout(() => {
+        const active = activeExecRef.current
+        if (!active || active.requestId !== next.requestId) return
+        activeExecRef.current = null
+        dispatchExecResult(next.requestId, {
+          success: false,
+          code: null,
+          stdout: active.captured,
+          stderr: '',
+          error: `Command timed out after ${Math.round(EXEC_REQUEST_TIMEOUT_MS / 1000)}s in global terminal.`
+        })
+        if (sessionIdRef.current) {
+          void window.api.writeTerminalSession(sessionIdRef.current, '\u0003')
+        }
+        void startNextExec()
+      }, EXEC_REQUEST_TIMEOUT_MS)
 
       const wrapper = buildExecWrapper(next.command, beginMarker, doneMarker)
       const writeResult = await window.api.writeTerminalSession(sessionId, wrapper)
       if (!writeResult.success) {
         activeExecRef.current = null
+        clearActiveExecTimeout()
         dispatchExecResult(next.requestId, {
           success: false,
           code: null,
@@ -468,6 +518,9 @@ function GlobalTerminalPanel(): React.JSX.Element {
     }
 
     const recreateSession = async (): Promise<void> => {
+      if (activeExecRef.current || execQueueRef.current.length > 0) {
+        failPendingExecRequests('Terminal session restarted before command completion.')
+      }
       if (sessionIdRef.current) {
         suppressNextExitRef.current = true
         if (flowPausedRef.current) {
@@ -556,6 +609,7 @@ function GlobalTerminalPanel(): React.JSX.Element {
 
     const openHandler = (): void => {
       openPanel()
+      window.dispatchEvent(new CustomEvent(TERMINAL_EVENTS.readyEvent))
     }
 
     const resizeObserver = new ResizeObserver(() => {
@@ -567,8 +621,10 @@ function GlobalTerminalPanel(): React.JSX.Element {
     window.addEventListener(TERMINAL_EVENTS.openEvent, openHandler as EventListener)
     window.addEventListener(TERMINAL_EVENTS.execEvent, execHandler as EventListener)
     window.addEventListener('resize', resizeHandler)
+    window.dispatchEvent(new CustomEvent(TERMINAL_EVENTS.readyEvent))
 
     return () => {
+      window.dispatchEvent(new CustomEvent(TERMINAL_EVENTS.disposedEvent))
       resizeObserver.disconnect()
       window.removeEventListener(TERMINAL_EVENTS.appendEvent, appendHandler as EventListener)
       window.removeEventListener(TERMINAL_EVENTS.openEvent, openHandler as EventListener)
@@ -578,6 +634,8 @@ function GlobalTerminalPanel(): React.JSX.Element {
       unsubscribeTerminalExit()
       disposeBinary.dispose()
       failPendingExecRequests('Terminal panel was disposed before command completion.')
+      clearActiveExecTimeout()
+      creatingSessionPromiseRef.current = null
       recreateSessionRef.current = null
       if (sessionIdRef.current) {
         if (flowPausedRef.current) {

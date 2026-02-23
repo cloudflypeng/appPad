@@ -17,8 +17,16 @@ function createWindow(): void {
     width: 900,
     height: 670,
     show: false,
+    transparent: true,
+    backgroundColor: '#00000000',
     autoHideMenuBar: true,
-    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          vibrancy: 'under-window' as const,
+          visualEffectState: 'active' as const
+        }
+      : {}),
     ...(process.platform !== 'darwin' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

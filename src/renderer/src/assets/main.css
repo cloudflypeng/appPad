@@ -129,7 +129,8 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background-color: transparent;
     font-family: var(--app-font-sans);
     font-feature-settings:
       'ss01' 1,
@@ -157,11 +158,12 @@ body {
   margin: 0;
   min-height: 100vh;
   color: var(--foreground);
-  background-color: var(--background);
-  background-image:
-    radial-gradient(circle at 50% -20%, rgb(42 50 66 / 36%), transparent 45%),
-    linear-gradient(180deg, #0a0c10 0%, #08090b 100%);
-  background-attachment: fixed;
+  background-color: transparent;
+  background-image: none;
+}
+
+html {
+  background: transparent;
 }
 
 code {
@@ -176,6 +178,7 @@ code {
 
 #root {
   min-height: 100vh;
+  background: transparent;
 }
 
 * {
