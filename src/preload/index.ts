@@ -266,6 +266,14 @@ const api = {
     }
     ipcRenderer.on('terminal:exit', listener)
     return () => ipcRenderer.removeListener('terminal:exit', listener)
+  },
+  getNativeTheme: () => ipcRenderer.invoke('get-native-theme') as Promise<{ dark: boolean }>,
+  onNativeThemeChanged: (callback: (isDark: boolean) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, isDark: boolean) => {
+      callback(isDark)
+    }
+    ipcRenderer.on('native-theme-changed', listener)
+    return () => ipcRenderer.removeListener('native-theme-changed', listener)
   }
 }
 

@@ -14,6 +14,8 @@ import {
   Wrench
 } from 'lucide-react'
 
+import { useNativeTheme } from '@/hooks/use-theme'
+
 import EssentialsManager from '@/components/essentials/EssentialsManager'
 import BrowserCatalog from '@/components/homebrew/BrowserCatalog'
 import HomebrewManager from '@/components/homebrew/HomebrewManager'
@@ -48,6 +50,7 @@ const APP_TOPBAR_REFRESH_EVENT = 'app:topbar-refresh'
 
 function App(): React.JSX.Element {
   console.log('apppad')
+  useNativeTheme()
   const [activeTab, setActiveTab] = useState<
     | 'homebrew'
     | 'installed'
@@ -176,7 +179,7 @@ function App(): React.JSX.Element {
                     {navigationTabs.map((tab) => (
                       <SidebarMenuItem key={tab.key}>
                         <SidebarMenuButton
-                          className="h-9 rounded-lg bg-transparent px-3 text-[12px] font-medium text-zinc-300 transition-all duration-300 hover:bg-white/[0.04] hover:text-zinc-100 data-[active=true]:bg-white/[0.055] data-[active=true]:text-white group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
+                          className="h-9 rounded-lg bg-transparent px-3 text-[12px] font-medium text-sidebar-foreground transition-all duration-300 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
                           isActive={activeTab === tab.key}
                           tooltip={tab.title}
                           onClick={() => setActiveTab(tab.key)}
@@ -198,7 +201,7 @@ function App(): React.JSX.Element {
                     {updateTabs.map((tab) => (
                       <SidebarMenuItem key={tab.key}>
                         <SidebarMenuButton
-                          className="h-9 rounded-md border-0 bg-transparent px-3 text-[12px] font-medium text-zinc-400 transition-[color,background-color] duration-200 hover:bg-white/[0.03] hover:text-zinc-100 data-[active=true]:bg-white/[0.04] data-[active=true]:text-white data-[active=true]:shadow-none group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
+                          className="h-9 rounded-md border-0 bg-transparent px-3 text-[12px] font-medium text-muted-foreground transition-[color,background-color] duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground data-[active=true]:shadow-none group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
                           isActive={activeTab === tab.key}
                           tooltip={tab.title}
                           onClick={() => setActiveTab(tab.key)}
@@ -215,7 +218,7 @@ function App(): React.JSX.Element {
             <SidebarFooter className="px-3 pb-3 group-data-[collapsible=icon]:px-1.5">
               <Button
                 variant="secondary"
-                className="h-9 w-full justify-start gap-2 overflow-hidden rounded-lg bg-white/[0.03] px-3 text-[12px] font-medium text-zinc-200 transition-all duration-300 hover:bg-white/[0.06] group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
+                className="h-9 w-full justify-start gap-2 overflow-hidden rounded-lg bg-glass-bg px-3 text-[12px] font-medium text-foreground transition-all duration-300 hover:bg-glass-bg-hover group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:px-0"
                 onClick={() => {
                   void handleRefreshInstalledState()
                 }}
@@ -236,21 +239,21 @@ function App(): React.JSX.Element {
           </Sidebar>
 
           <SidebarInset className="min-w-0 h-screen flex-1 p-2">
-            <div className="relative flex h-screen flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.14] bg-transparent backdrop-blur-[18px]">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(85%_140%_at_22%_1%,rgba(255,255,255,0.1)_0%,rgba(255,255,255,0.04)_42%,rgba(255,255,255,0)_74%)]" />
-              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.16)_0%,rgba(0,0,0,0.05)_20%,rgba(0,0,0,0)_50%,rgba(0,0,0,0.05)_80%,rgba(0,0,0,0.16)_100%)]" />
-              <div className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:radial-gradient(rgba(255,255,255,0.22)_0.4px,transparent_0.4px)] [background-size:4px_4px]" />
-              <div className="sticky top-0 z-10 rounded-t-2xl border-b border-white/[0.12] bg-white/[0.03] px-4 py-2.5 backdrop-blur-2xl select-none">
+            <div className="relative flex h-screen flex-1 flex-col overflow-hidden rounded-2xl border border-glass-border bg-transparent backdrop-blur-[18px]">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(85%_140%_at_22%_1%,rgba(0,0,0,0.03)_0%,rgba(0,0,0,0.01)_42%,transparent_74%)] dark:bg-[radial-gradient(85%_140%_at_22%_1%,rgba(255,255,255,0.1)_0%,rgba(255,255,255,0.04)_42%,transparent_74%)]" />
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.04)_0%,rgba(0,0,0,0.015)_20%,transparent_50%,rgba(0,0,0,0.015)_80%,rgba(0,0,0,0.04)_100%)] dark:bg-[linear-gradient(90deg,rgba(0,0,0,0.16)_0%,rgba(0,0,0,0.05)_20%,transparent_50%,rgba(0,0,0,0.05)_80%,rgba(0,0,0,0.16)_100%)]" />
+              <div className="pointer-events-none absolute inset-0 opacity-[0.02] dark:opacity-[0.08] [background-image:radial-gradient(rgba(0,0,0,0.22)_0.4px,transparent_0.4px)] dark:[background-image:radial-gradient(rgba(255,255,255,0.22)_0.4px,transparent_0.4px)] [background-size:4px_4px]" />
+              <div className="sticky top-0 z-10 rounded-t-2xl border-b border-glass-border bg-glass-bg px-4 py-2.5 backdrop-blur-2xl select-none">
                 <div className="flex items-center gap-2.5">
-                  <SidebarTrigger className="text-zinc-400 hover:text-zinc-100 size-7 rounded-md bg-white/[0.03] transition-[color,background-color] duration-200 hover:bg-white/[0.06] cursor-pointer" />
+                  <SidebarTrigger className="text-muted-foreground hover:text-foreground size-7 rounded-md bg-glass-bg transition-[color,background-color] duration-200 hover:bg-glass-bg-hover cursor-pointer" />
                   <div>
-                    <h1 className="text-[16px] font-semibold leading-none tracking-[-0.01em] text-zinc-100">
+                    <h1 className="text-[16px] font-semibold leading-none tracking-[-0.01em] text-foreground">
                       {activeTitle}
                     </h1>
                   </div>
                 </div>
               </div>
-              <SmoothScrollArea className="relative z-10 h-[90vh] min-h-0 flex-1 bg-gradient-to-b from-white/[0.03] via-transparent to-black/[0.12]">
+              <SmoothScrollArea className="relative z-10 h-[90vh] min-h-0 flex-1 bg-gradient-to-b from-glass-bg via-transparent to-glass-bg">
                 {activeTab === 'homebrew' ? <HomebrewManager /> : null}
                 {activeTab === 'browser' ? <BrowserCatalog /> : null}
                 {activeTab === 'terminal' ? <TerminalManager /> : null}

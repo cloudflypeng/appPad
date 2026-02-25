@@ -32,7 +32,7 @@ function NodeVersionManager(): React.JSX.Element {
   const [runningNodeFormula, setRunningNodeFormula] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const actionIconButtonClass =
-    'h-7 w-7 border-0 bg-transparent text-zinc-300 transition-colors hover:bg-white/[0.07] hover:text-white'
+    'h-7 w-7 border-0 bg-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground'
 
   const refreshBrewStatus = async (showLoading = false): Promise<BrewStatus | null> => {
     if (showLoading) setLoadingStatus(true)
@@ -245,7 +245,7 @@ function NodeVersionManager(): React.JSX.Element {
           ) : null}
 
           {nodeVersions.length > 0 ? (
-            <ul className="divide-y divide-white/[0.06]">
+            <ul className="divide-y divide-glass-divider">
               {nodeVersions.map((item) => (
                 <li key={item.formula} className="flex items-center justify-between gap-2 py-2">
                   <div className="min-w-0">

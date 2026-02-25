@@ -70,7 +70,7 @@ function CatalogItemRow({
 }: CatalogItemRowProps): React.JSX.Element {
   const icon = item.iconKey ? ICON_MAP[item.iconKey] : undefined
   const actionIconButtonClass =
-    'h-7 w-7 border-0 bg-transparent text-zinc-300 transition-colors hover:bg-white/[0.07] hover:text-white'
+    'h-7 w-7 border-0 bg-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground'
   const toggleLabel = running
     ? item.installed
       ? 'Uninstalling...'
@@ -115,13 +115,13 @@ function CatalogItemRow({
 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[13px] font-medium text-zinc-100">{item.name}</p>
+            <p className="text-[13px] font-medium text-foreground">{item.name}</p>
             <Badge
               variant="secondary"
               className={
                 item.installed
-                  ? 'bg-transparent px-1.5 py-0 text-[10px] text-zinc-100'
-                  : 'bg-transparent px-1.5 py-0 text-[10px] text-zinc-300'
+                  ? 'bg-transparent px-1.5 py-0 text-[10px] text-foreground'
+                  : 'bg-transparent px-1.5 py-0 text-[10px] text-muted-foreground'
               }
             >
               {item.installed ? 'Installed' : 'Not Installed'}
@@ -129,13 +129,13 @@ function CatalogItemRow({
             {item.installed && item.hasUpdate ? (
               <Badge
                 variant="outline"
-                className="border-amber-300 bg-amber-300 px-1.5 py-0 text-[10px] font-semibold text-amber-950"
+                className="border-amber-500 bg-amber-500 px-1.5 py-0 text-[10px] font-semibold text-white dark:border-amber-400 dark:bg-amber-400 dark:text-amber-950"
               >
                 Update Available
               </Badge>
             ) : null}
           </div>
-          <p className="mt-0.5 text-xs leading-relaxed text-zinc-400">{item.description}</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{item.description}</p>
         </div>
       </div>
 

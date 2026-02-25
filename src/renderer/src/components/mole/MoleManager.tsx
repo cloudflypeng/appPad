@@ -50,7 +50,7 @@ function MoleManager(): React.JSX.Element {
   const [lastRawOutput, setLastRawOutput] = useState<string>('')
   const [runningUninstallApp, setRunningUninstallApp] = useState<string | null>(null)
   const actionIconButtonClass =
-    'h-7 w-7 border-0 bg-transparent text-zinc-300 transition-colors hover:bg-white/[0.07] hover:text-white'
+    'h-7 w-7 border-0 bg-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground'
 
   const refreshStatus = async (showLoading = false): Promise<void> => {
     if (showLoading) setLoadingStatus(true)
@@ -233,7 +233,7 @@ function MoleManager(): React.JSX.Element {
             <h2 className="text-base font-semibold">Mole Installation</h2>
             <p className="text-sm text-muted-foreground">Detect Mole installation status and run update.</p>
           </div>
-          <div className="divide-y divide-white/[0.06]">
+          <div className="divide-y divide-glass-divider">
             <div className="flex items-center justify-between gap-3 py-2.5">
               <div>
                 <p className="text-sm font-medium">Installation</p>
@@ -411,7 +411,7 @@ function MoleManager(): React.JSX.Element {
                   <th className="px-2 py-1.5 text-left font-medium">Action</th>
                 </tr>
               </thead>
-              <tbody className="[&>tr]:border-b [&>tr]:border-white/[0.06] [&>tr:last-child]:border-0">
+              <tbody className="[&>tr]:border-b [&>tr]:border-glass-divider [&>tr:last-child]:border-0">
                 {rows.length > 0 ? (
                   rows.map((row) => (
                     <tr key={row.name}>
