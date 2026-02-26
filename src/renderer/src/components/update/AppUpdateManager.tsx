@@ -92,7 +92,7 @@ function AppUpdateManager(): React.JSX.Element {
   return (
     <main className="px-6 py-6 md:px-8 md:py-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
-        <div className="divide-y divide-white/[0.06]">
+        <div className="divide-y divide-glass-divider">
           <div className="flex items-center justify-between gap-3 py-2.5">
             <div>
               <p className="text-sm font-medium">Application Update</p>
@@ -105,7 +105,7 @@ function AppUpdateManager(): React.JSX.Element {
                 variant={info?.updateAvailable ? 'outline' : 'secondary'}
                 className={
                   info?.updateAvailable
-                    ? 'border-amber-300 bg-amber-300 font-semibold text-amber-950'
+                    ? 'border-amber-500 bg-amber-500 font-semibold text-white dark:border-amber-400 dark:bg-amber-400 dark:text-amber-950'
                     : undefined
                 }
               >
@@ -174,7 +174,7 @@ function AppUpdateManager(): React.JSX.Element {
             <div className="py-1">
               <p className="text-sm font-medium">Release Notes</p>
             </div>
-            <div className="rounded-md border border-white/[0.06] p-3">
+            <div className="rounded-md border border-glass-divider p-3">
               <pre className="whitespace-pre-wrap text-xs text-muted-foreground">{info.releaseNotes}</pre>
             </div>
           </div>

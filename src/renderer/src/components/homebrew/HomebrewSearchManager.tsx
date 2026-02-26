@@ -236,7 +236,7 @@ function HomebrewSearchManager(): React.JSX.Element {
             autoComplete="off"
             spellCheck={false}
             pattern="[A-Za-z0-9]*"
-            className="h-10 rounded-xl border-white/[0.16] bg-white/[0.04] px-3.5 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-white/[0.3] focus-visible:bg-white/[0.06] focus-visible:ring-white/[0.22]"
+            className="h-10 rounded-xl border-glass-border bg-glass-bg px-3.5 text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:bg-glass-bg-hover focus-visible:ring-ring/35"
             disabled={loading || runningToken !== null}
           />
           <Button

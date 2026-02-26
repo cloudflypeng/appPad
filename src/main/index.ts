@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, nativeTheme } from 'electron'
 import { join } from 'path'
 import { spawn } from 'child_process'
 import { chmodSync, createWriteStream, existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs'
@@ -36,6 +36,10 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+  })
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.send('native-theme-changed', nativeTheme.shouldUseDarkColors)
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -2037,6 +2041,14 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+  ipcMain.handle('get-native-theme', () => {
+    return { dark: nativeTheme.shouldUseDarkColors }
+  })
+  nativeTheme.on('updated', () => {
+    BrowserWindow.getAllWindows().forEach((window) => {
+      window.webContents.send('native-theme-changed', nativeTheme.shouldUseDarkColors)
+    })
+  })
   setupUpdateHandlers()
   ipcMain.handle('brew:get-status', async () => {
     const refreshed = await refreshBrewStatusCache()

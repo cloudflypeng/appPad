@@ -184,6 +184,8 @@ type AppAPI = {
   onUpdateError: (callback: (message: string) => void) => () => void
   onTerminalData: (callback: (payload: { sessionId: number; data: string }) => void) => () => void
   onTerminalExit: (callback: (payload: { sessionId: number; code: number | null }) => void) => () => void
+  getNativeTheme: () => Promise<{ dark: boolean }>
+  onNativeThemeChanged: (callback: (isDark: boolean) => void) => () => void
 }
 
 declare global {

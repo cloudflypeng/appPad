@@ -419,14 +419,14 @@ function CatalogTab({
 
   const sectionCardClass = 'px-3 py-3 md:px-4'
   const updateSectionCardClass = 'px-3 py-3 md:px-4'
-  const emptyCardClass = 'px-4 py-8 text-sm text-zinc-400'
+  const emptyCardClass = 'px-4 py-8 text-sm text-muted-foreground'
 
   return (
     <main className="flex justify-center py-5 md:py-6">
       <div className="mx-auto flex w-[min(1080px,88vw)] flex-col gap-4">
         <div className="space-y-4">
           {brewInstalled === false ? (
-            <Alert className="text-zinc-200">
+            <Alert className="text-foreground">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
                 Homebrew is not installed. Install Homebrew in the Homebrew tab before installing{' '}
@@ -438,7 +438,7 @@ function CatalogTab({
           {loading && items.length === 0 ? (
             <div className="space-y-3">
               {Array.from({ length: discoverInstalled ? 8 : normalizedSeeds.length || 6 }).map((_, idx) => (
-                <Skeleton key={idx} className="h-20 w-full rounded-xl bg-white/[0.04]" />
+                <Skeleton key={idx} className="h-20 w-full rounded-xl bg-muted" />
               ))}
             </div>
           ) : discoverInstalled && installedVisibleItems.length === 0 ? (
@@ -450,10 +450,10 @@ function CatalogTab({
               {updatableItems.length > 0 ? (
                 <section className={updateSectionCardClass}>
                   <div className="mb-2 flex items-center justify-between">
-                    <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-amber-200/90">
+                    <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-amber-600 dark:text-amber-200/90">
                       Updates Available
                     </h3>
-                    <span className="text-[11px] text-amber-100/70">{updatableItems.length}</span>
+                    <span className="text-[11px] text-amber-500/80 dark:text-amber-100/70">{updatableItems.length}</span>
                   </div>
                   <div className="flex flex-col gap-2.5">
                     {updatableItems.map((item) => (
@@ -480,11 +480,11 @@ function CatalogTab({
 
               <section className={sectionCardClass}>
                 <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-400">Casks</h3>
-                  <span className="text-[11px] text-zinc-500">{installedCasks.length}</span>
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Casks</h3>
+                  <span className="text-[11px] text-muted-foreground/70">{installedCasks.length}</span>
                 </div>
                 {installedCasks.length === 0 ? (
-                  <div className="px-4 py-4 text-sm text-zinc-400">
+                  <div className="px-4 py-4 text-sm text-muted-foreground">
                     {updatableItems.length > 0 ? 'No other installed casks found.' : 'No installed casks found.'}
                   </div>
                 ) : (
@@ -513,11 +513,11 @@ function CatalogTab({
 
               <section className={sectionCardClass}>
                 <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-400">Formulae</h3>
-                  <span className="text-[11px] text-zinc-500">{installedFormulae.length}</span>
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Formulae</h3>
+                  <span className="text-[11px] text-muted-foreground/70">{installedFormulae.length}</span>
                 </div>
                 {installedFormulae.length === 0 ? (
-                  <div className="px-4 py-4 text-sm text-zinc-400">
+                  <div className="px-4 py-4 text-sm text-muted-foreground">
                     {updatableItems.length > 0
                       ? 'No other installed formulae found.'
                       : 'No installed formulae found.'}
@@ -549,8 +549,8 @@ function CatalogTab({
           ) : (
             <section className={sectionCardClass}>
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-400">{title}</h3>
-                <span className="text-[11px] text-zinc-500">{items.length}</span>
+                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</h3>
+                <span className="text-[11px] text-muted-foreground/70">{items.length}</span>
               </div>
               <div className="flex flex-col gap-2.5">
                 {items.map((item) => (

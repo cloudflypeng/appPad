@@ -216,7 +216,7 @@ function HomebrewManager(): React.JSX.Element {
             <Skeleton className="h-80 w-full rounded-md" />
           </div>
         ) : (
-          <div className="divide-y divide-white/[0.06]">
+          <div className="divide-y divide-glass-divider">
             <div className="flex items-center justify-between gap-3 py-2.5">
               <div>
                 <p className="text-sm font-medium">Installation</p>
